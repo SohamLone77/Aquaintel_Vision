@@ -1,0 +1,13 @@
+{
+  "model": "unet_full_890",
+  "total_epochs": 50,
+  "best_epoch": 46,
+  "val_loss": 0.07196485996246338,
+  "val_mae": 0.07779838889837265,
+  "val_ssim": 0.8759835362434387,
+  "val_psnr_db": 20.715133666992188,
+  "train_images": 712,
+  "val_images": 178,
+  "image_size": "128x128",
+  "batch_size": 8
+}
