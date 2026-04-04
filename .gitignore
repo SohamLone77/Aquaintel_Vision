@@ -1,0 +1,25 @@
+# Python cache/bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+.venv*/
+venv/
+env/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+
+# Local data and training artifacts
+data/
+logs/
+models/checkpoints/
+results/training_plots/
+results/sharp_outputs/
+results/comparison_*.png
+quick_test_result.png

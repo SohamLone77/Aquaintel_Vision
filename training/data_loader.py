@@ -15,7 +15,7 @@ import random
 
 class UnderwaterDataLoader:
     def __init__(self, data_path="data", img_size=128, batch_size=8,
-                 validation_split=0.2, augment=True):
+                 validation_split=0.2, augment=True, augmentation_config=None):
         """
         Enhanced data loader for underwater images
         
@@ -31,6 +31,7 @@ class UnderwaterDataLoader:
         self.batch_size = batch_size
         self.validation_split = validation_split
         self.augment = augment
+        self.augmentation_config = self._resolve_augmentation_config(augmentation_config)
         
         self.raw_folder = os.path.join(data_path, "raw")
         self.ref_folder = os.path.join(data_path, "reference")
@@ -61,6 +62,64 @@ class UnderwaterDataLoader:
         print(f"   Image size: {img_size}x{img_size}")
         print(f"   Batch size: {batch_size}")
         print(f"   Augmentation: {'ON' if augment else 'OFF'}")
+        if augment:
+            print(f"   Aug profile: {self.augmentation_config['profile']}")
+
+    def _resolve_augmentation_config(self, config):
+        """Merge profile presets with explicit augmentation overrides."""
+        profile_presets = {
+            'none': {
+                'flip_prob': 0.0,
+                'vertical_flip_prob': 0.0,
+                'rotate_prob': 0.0,
+                'brightness_prob': 0.0,
+                'brightness_delta': 0.0,
+                'contrast_prob': 0.0,
+                'contrast_lower': 1.0,
+                'contrast_upper': 1.0,
+            },
+            'light': {
+                'flip_prob': 0.3,
+                'vertical_flip_prob': 0.2,
+                'rotate_prob': 0.5,
+                'brightness_prob': 0.3,
+                'brightness_delta': 0.05,
+                'contrast_prob': 0.3,
+                'contrast_lower': 0.9,
+                'contrast_upper': 1.1,
+            },
+            'standard': {
+                'flip_prob': 0.5,
+                'vertical_flip_prob': 0.5,
+                'rotate_prob': 1.0,
+                'brightness_prob': 0.5,
+                'brightness_delta': 0.1,
+                'contrast_prob': 0.5,
+                'contrast_lower': 0.8,
+                'contrast_upper': 1.2,
+            },
+            'strong': {
+                'flip_prob': 0.7,
+                'vertical_flip_prob': 0.7,
+                'rotate_prob': 1.0,
+                'brightness_prob': 0.7,
+                'brightness_delta': 0.15,
+                'contrast_prob': 0.7,
+                'contrast_lower': 0.7,
+                'contrast_upper': 1.3,
+            },
+        }
+
+        cfg = dict(config or {})
+        profile = str(cfg.pop('profile', 'standard')).lower()
+        if profile not in profile_presets:
+            print(f"⚠️ Unknown augmentation profile '{profile}', using 'standard'.")
+            profile = 'standard'
+
+        resolved = dict(profile_presets[profile])
+        resolved.update(cfg)
+        resolved['profile'] = profile
+        return resolved
     
     def _get_image_files(self, folder):
         """Get all image files in folder"""
@@ -69,8 +128,14 @@ class UnderwaterDataLoader:
         
         extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.JPG', '*.PNG']
         files = []
+        seen = set()
         for ext in extensions:
-            files.extend(glob.glob(os.path.join(folder, ext)))
+            for file_path in glob.glob(os.path.join(folder, ext)):
+                key = os.path.normcase(os.path.abspath(file_path))
+                if key in seen:
+                    continue
+                seen.add(key)
+                files.append(file_path)
         return sorted(files)
     
     def _validate_pairs(self):
@@ -166,30 +231,32 @@ class UnderwaterDataLoader:
         """Apply same augmentation to both raw and reference"""
         if not self.augment:
             return raw, ref
+
+        cfg = self.augmentation_config
         
         # Random horizontal flip
-        if tf.random.uniform(()) > 0.5:
+        if tf.random.uniform(()) < cfg['flip_prob']:
             raw = tf.image.flip_left_right(raw)
             ref = tf.image.flip_left_right(ref)
         
         # Random vertical flip
-        if tf.random.uniform(()) > 0.5:
+        if tf.random.uniform(()) < cfg['vertical_flip_prob']:
             raw = tf.image.flip_up_down(raw)
             ref = tf.image.flip_up_down(ref)
         
         # Random rotation (90, 180, 270 degrees)
-        k = tf.random.uniform((), maxval=4, dtype=tf.int32)
-        raw = tf.image.rot90(raw, k)
-        ref = tf.image.rot90(ref, k)
+        if tf.random.uniform(()) < cfg['rotate_prob']:
+            k = tf.random.uniform((), minval=1, maxval=4, dtype=tf.int32)
+            raw = tf.image.rot90(raw, k)
+            ref = tf.image.rot90(ref, k)
         
         # Random brightness adjustment (only for raw)
-        if tf.random.uniform(()) > 0.5:
-            raw = tf.image.random_brightness(raw, max_delta=0.1)
+        if cfg['brightness_delta'] > 0 and tf.random.uniform(()) < cfg['brightness_prob']:
+            raw = tf.image.random_brightness(raw, max_delta=cfg['brightness_delta'])
         
-        # Random contrast adjustment
-        if tf.random.uniform(()) > 0.5:
-            raw = tf.image.random_contrast(raw, lower=0.8, upper=1.2)
-            ref = tf.image.random_contrast(ref, lower=0.8, upper=1.2)
+        # Random contrast adjustment (only for raw)
+        if tf.random.uniform(()) < cfg['contrast_prob']:
+            raw = tf.image.random_contrast(raw, lower=cfg['contrast_lower'], upper=cfg['contrast_upper'])
         
         # Clip values to [0, 1]
         raw = tf.clip_by_value(raw, 0.0, 1.0)

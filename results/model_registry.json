@@ -1,0 +1,431 @@
+{
+  "unet_20260403_0449": {
+    "timestamp": "2026-04-03T04:55:21",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 2,
+      "epochs": 1,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "model_name": "unet_20260403_0449",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.1896742880344391,
+      "final_mae": 0.12894636392593384,
+      "final_val_loss": 0.18067453801631927,
+      "final_val_mae": 0.12718313932418823,
+      "epochs_ran": 1
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_20260403_0449_best.h5",
+      "final_h5": "models/checkpoints\\unet_20260403_0449_final.h5",
+      "final_keras": "models/checkpoints\\unet_20260403_0449_final.keras",
+      "history_plot": "results\\training_plots\\unet_20260403_0449_history.png",
+      "sample_plot": "results\\training_plots\\unet_20260403_0449_samples.png"
+    }
+  },
+  "unet_20260403_0500": {
+    "timestamp": "2026-04-03T05:54:49",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 8,
+      "epochs": 50,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "model_name": "unet_20260403_0500",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.06493017822504044,
+      "final_mae": 0.07703280448913574,
+      "final_val_loss": 0.07076435536146164,
+      "final_val_mae": 0.07822594791650772,
+      "epochs_ran": 50
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_20260403_0500_best.h5",
+      "final_h5": "models/checkpoints\\unet_20260403_0500_final.h5",
+      "final_keras": "models/checkpoints\\unet_20260403_0500_final.keras",
+      "history_plot": "results\\training_plots\\unet_20260403_0500_history.png",
+      "sample_plot": "results\\training_plots\\unet_20260403_0500_samples.png"
+    }
+  },
+  "unet_20260403_0811": {
+    "timestamp": "2026-04-03T09:21:12",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 8,
+      "epochs": 50,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.5,
+      "model_name": "unet_20260403_0811",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.06346144527196884,
+      "final_mae": 0.07569953799247742,
+      "final_val_loss": 0.07034000009298325,
+      "final_val_mae": 0.07785447686910629,
+      "epochs_ran": 50
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_20260403_0811_best.h5",
+      "final_h5": "models/checkpoints\\unet_20260403_0811_final.h5",
+      "final_keras": "models/checkpoints\\unet_20260403_0811_final.keras",
+      "history_plot": "results\\training_plots\\unet_20260403_0811_history.png",
+      "sample_plot": "results\\training_plots\\unet_20260403_0811_samples.png"
+    }
+  },
+  "unet_20260403_0924": {
+    "timestamp": "2026-04-03T09:32:18",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 8,
+      "epochs": 10,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.6,
+      "model_name": "unet_20260403_0924",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.10307219624519348,
+      "final_mae": 0.09201385080814362,
+      "final_val_loss": 0.11020907759666443,
+      "final_val_mae": 0.09426011145114899,
+      "epochs_ran": 10
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_20260403_0924_best.h5",
+      "final_h5": "models/checkpoints\\unet_20260403_0924_final.h5",
+      "final_keras": "models/checkpoints\\unet_20260403_0924_final.keras",
+      "history_plot": "results\\training_plots\\unet_20260403_0924_history.png",
+      "sample_plot": "results\\training_plots\\unet_20260403_0924_samples.png"
+    }
+  },
+  "unet_20260403_0938": {
+    "timestamp": "2026-04-03T10:17:16",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 8,
+      "epochs": 50,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.6,
+      "model_name": "unet_20260403_0938",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.07784261554479599,
+      "final_mae": 0.07803662866353989,
+      "final_val_loss": 0.08124882727861404,
+      "final_val_mae": 0.07662291824817657,
+      "epochs_ran": 50
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_20260403_0938_best.h5",
+      "final_h5": "models/checkpoints\\unet_20260403_0938_final.h5",
+      "final_keras": "models/checkpoints\\unet_20260403_0938_final.keras",
+      "history_plot": "results\\training_plots\\unet_20260403_0938_history.png",
+      "sample_plot": "results\\training_plots\\unet_20260403_0938_samples.png"
+    }
+  },
+  "unet_20260403_1019": {
+    "timestamp": "2026-04-03T11:03:41",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 8,
+      "epochs": 50,
+      "learning_rate": 5e-05,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.5,
+      "model_name": "unet_20260403_1019",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.06907135993242264,
+      "final_mae": 0.07951991260051727,
+      "final_val_loss": 0.07304297387599945,
+      "final_val_mae": 0.0787934809923172,
+      "epochs_ran": 50
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_20260403_1019_best.h5",
+      "final_h5": "models/checkpoints\\unet_20260403_1019_final.h5",
+      "final_keras": "models/checkpoints\\unet_20260403_1019_final.keras",
+      "history_plot": "results\\training_plots\\unet_20260403_1019_history.png",
+      "sample_plot": "results\\training_plots\\unet_20260403_1019_samples.png"
+    }
+  },
+  "unet_20260403_1107": {
+    "timestamp": "2026-04-03T11:52:01",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 4,
+      "epochs": 50,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.5,
+      "model_name": "unet_20260403_1107",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.06513326615095139,
+      "final_mae": 0.07907851040363312,
+      "final_val_loss": 0.07030308991670609,
+      "final_val_mae": 0.07784567773342133,
+      "epochs_ran": 50
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_20260403_1107_best.h5",
+      "final_h5": "models/checkpoints\\unet_20260403_1107_final.h5",
+      "final_keras": "models/checkpoints\\unet_20260403_1107_final.keras",
+      "history_plot": "results\\training_plots\\unet_20260403_1107_history.png",
+      "sample_plot": "results\\training_plots\\unet_20260403_1107_samples.png"
+    }
+  },
+  "unet_20260403_1511": {
+    "timestamp": "2026-04-03T15:15:04",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 2,
+      "epochs": 1,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.5,
+      "augment_enabled": true,
+      "augmentation_profile": "standard",
+      "augmentation": {
+        "flip_prob": 0.5,
+        "vertical_flip_prob": 0.5,
+        "rotate_prob": 1.0,
+        "brightness_prob": 0.5,
+        "brightness_delta": 0.1,
+        "contrast_prob": 0.5,
+        "contrast_lower": 0.8,
+        "contrast_upper": 1.2
+      },
+      "model_name": "unet_20260403_1511",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.19314275681972504,
+      "final_mae": 0.13524538278579712,
+      "final_val_loss": 0.19942128658294678,
+      "final_val_mae": 0.13427092134952545,
+      "epochs_ran": 1
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_20260403_1511_best.h5",
+      "final_h5": "models/checkpoints\\unet_20260403_1511_final.h5",
+      "final_keras": "models/checkpoints\\unet_20260403_1511_final.keras",
+      "history_plot": "results\\training_plots\\unet_20260403_1511_history.png",
+      "sample_plot": "results\\training_plots\\unet_20260403_1511_samples.png"
+    }
+  },
+  "unet_augstd_20260403_pilot": {
+    "timestamp": "2026-04-03T15:25:21",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 8,
+      "epochs": 10,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.5,
+      "augment_enabled": true,
+      "augmentation_profile": "standard",
+      "augmentation": {
+        "flip_prob": 0.5,
+        "vertical_flip_prob": 0.5,
+        "rotate_prob": 1.0,
+        "brightness_prob": 0.5,
+        "brightness_delta": 0.1,
+        "contrast_prob": 0.5,
+        "contrast_lower": 0.8,
+        "contrast_upper": 1.2
+      },
+      "model_name": "unet_augstd_20260403_pilot",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.08836483955383301,
+      "final_mae": 0.0912887454032898,
+      "final_val_loss": 0.09582959860563278,
+      "final_val_mae": 0.09173601120710373,
+      "epochs_ran": 10
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_augstd_20260403_pilot_best.h5",
+      "final_h5": "models/checkpoints\\unet_augstd_20260403_pilot_final.h5",
+      "final_keras": "models/checkpoints\\unet_augstd_20260403_pilot_final.keras",
+      "history_plot": "results\\training_plots\\unet_augstd_20260403_pilot_history.png",
+      "sample_plot": "results\\training_plots\\unet_augstd_20260403_pilot_samples.png"
+    }
+  },
+  "unet_auglight_20260403_pilot": {
+    "timestamp": "2026-04-03T15:44:17",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 8,
+      "epochs": 10,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.5,
+      "augment_enabled": true,
+      "augmentation_profile": "light",
+      "augmentation": {
+        "flip_prob": 0.3,
+        "vertical_flip_prob": 0.2,
+        "rotate_prob": 0.5,
+        "brightness_prob": 0.3,
+        "brightness_delta": 0.05,
+        "contrast_prob": 0.3,
+        "contrast_lower": 0.9,
+        "contrast_upper": 1.1
+      },
+      "model_name": "unet_auglight_20260403_pilot",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.08563081175088882,
+      "final_mae": 0.09046190232038498,
+      "final_val_loss": 0.0926615446805954,
+      "final_val_mae": 0.0910787507891655,
+      "epochs_ran": 10
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_auglight_20260403_pilot_best.h5",
+      "final_h5": "models/checkpoints\\unet_auglight_20260403_pilot_final.h5",
+      "final_keras": "models/checkpoints\\unet_auglight_20260403_pilot_final.keras",
+      "history_plot": "results\\training_plots\\unet_auglight_20260403_pilot_history.png",
+      "sample_plot": "results\\training_plots\\unet_auglight_20260403_pilot_samples.png"
+    }
+  },
+  "unet_augstd_20260403_ab50": {
+    "timestamp": "2026-04-03T16:40:42",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 8,
+      "epochs": 50,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.5,
+      "augment_enabled": true,
+      "augmentation_profile": "standard",
+      "augmentation": {
+        "flip_prob": 0.5,
+        "vertical_flip_prob": 0.5,
+        "rotate_prob": 1.0,
+        "brightness_prob": 0.5,
+        "brightness_delta": 0.1,
+        "contrast_prob": 0.5,
+        "contrast_lower": 0.8,
+        "contrast_upper": 1.2
+      },
+      "model_name": "unet_augstd_20260403_ab50",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.06288494914770126,
+      "final_mae": 0.07566583156585693,
+      "final_val_loss": 0.07162104547023773,
+      "final_val_mae": 0.07847005128860474,
+      "epochs_ran": 50
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_augstd_20260403_ab50_best.h5",
+      "final_h5": "models/checkpoints\\unet_augstd_20260403_ab50_final.h5",
+      "final_keras": "models/checkpoints\\unet_augstd_20260403_ab50_final.keras",
+      "history_plot": "results\\training_plots\\unet_augstd_20260403_ab50_history.png",
+      "sample_plot": "results\\training_plots\\unet_augstd_20260403_ab50_samples.png"
+    }
+  }
+}

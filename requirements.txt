@@ -6,3 +6,6 @@ pillow>=10.0  # Latest Pillow
 jupyter>=1.0  # Latest Jupyter
 pandas>=2.0  # Often needed too
 scikit-learn>=1.3  # If you need ML tools
+PyYAML>=6.0
+requests>=2.31
+streamlit>=1.38

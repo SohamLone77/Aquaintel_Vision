@@ -23,20 +23,26 @@ print("=" * 60)
 
 # Ensure required directories exist
 for dir_name in ['models/checkpoints', 'losses', 'training',
-                 'data/raw', 'data/reference', 'logs', 'logs/csv',
+                 'logs', 'logs/csv',
                  'results/training_plots']:
     os.makedirs(dir_name, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # Imports
 # ---------------------------------------------------------------------------
-from models.basic_unet import build_basic_unet                          # noqa: E402
+try:
+    from models.basic_unet import build_basic_unet                      # noqa: E402
+except ModuleNotFoundError:
+    from basic_unet import build_basic_unet                             # noqa: E402
 from losses.simple_losses import SimpleLosses                            # noqa: E402
 from losses.underwater_losses import (UnderwaterLosses,                  # noqa: E402
                                        CombinedUnderwaterLoss,
                                        create_loss_function)
 from training.data_loader import UnderwaterDataLoader                    # noqa: E402
 from training.callbacks import create_all_callbacks, CustomCallback      # noqa: E402
+from utils.config_loader import ConfigError, load_runtime_config         # noqa: E402
+from utils.model_registry import ModelRegistry                            # noqa: E402
+from scripts.validate_dataset import validate_dataset                     # noqa: E402
 
 import matplotlib
 matplotlib.use('Agg')  # non-interactive backend for headless environments
@@ -57,24 +63,14 @@ class UnderwaterTrainer:
         Args:
             config: Dictionary with training parameters
         """
-        # Default configuration
-        self.config = {
-            'data_path': 'data',
-            'img_size': 128,
-            'batch_size': 8,
-            'epochs': 50,
-            'learning_rate': 1e-4,
-            'validation_split': 0.2,
-            'model_name': f'unet_{datetime.now().strftime("%Y%m%d_%H%M")}',
-            'early_stopping_patience': 10,
-            'reduce_lr_patience': 5,
-            'use_tensorboard': True,
-            'use_csv_logger': True
-        }
-        
-        # Update with user config
-        if config:
-            self.config.update(config)
+        if config is None:
+            self.config = load_runtime_config()
+        else:
+            self.config = config
+
+        os.makedirs(self.config['checkpoint_dir'], exist_ok=True)
+        os.makedirs(self.config['results_dir'], exist_ok=True)
+        os.makedirs(os.path.join(self.config['results_dir'], 'training_plots'), exist_ok=True)
         
         print("\n📋 Configuration:")
         for key, value in self.config.items():
@@ -92,21 +88,31 @@ class UnderwaterTrainer:
     def setup_data(self):
         """Initialize data loader and datasets"""
         print("\n📂 Loading data...")
+
+        is_valid, details = validate_dataset(data_path=self.config['data_path'])
+        if not is_valid:
+            issues = "\n - ".join(details['issues'])
+            raise RuntimeError(
+                f"Dataset validation failed for {self.config['data_path']}:\n - {issues}"
+            )
         
         self.loader = UnderwaterDataLoader(
             data_path=self.config['data_path'],
             img_size=self.config['img_size'],
             batch_size=self.config['batch_size'],
             validation_split=self.config['validation_split'],
-            augment=True
+            augment=self.config.get('augment_enabled', True),
+            augmentation_config={
+                'profile': self.config.get('augmentation_profile', 'standard'),
+                **self.config.get('augmentation', {}),
+            }
         )
         
         self.train_dataset = self.loader.get_dataset('train')
         self.val_dataset = self.loader.get_dataset('validation')
         
         if self.train_dataset is None:
-            print("⚠️ No training data available! Creating dummy data...")
-            self._create_dummy_data()
+            raise RuntimeError("Dataset loader returned no training dataset.")
         
         # Print dataset info
         if hasattr(self.loader, 'train_indices'):
@@ -137,17 +143,39 @@ class UnderwaterTrainer:
             input_shape=(self.config['img_size'], self.config['img_size'], 3)
         )
         
+        # Configure and compile model loss
+        loss_type = str(self.config.get('loss_type', 'combined')).lower()
+        if loss_type == 'combined':
+            SimpleLosses.combined_alpha = float(self.config.get('ssim_weight', 0.5))
+            selected_loss = SimpleLosses.combined_loss
+            print(f"🔧 Loss: combined (ssim_weight={SimpleLosses.combined_alpha})")
+        elif loss_type == 'mse':
+            selected_loss = SimpleLosses.mse_loss
+            print("🔧 Loss: mse")
+        elif loss_type == 'mae':
+            selected_loss = SimpleLosses.mae_loss
+            print("🔧 Loss: mae")
+        elif loss_type == 'ssim':
+            selected_loss = SimpleLosses.ssim_loss
+            print("🔧 Loss: ssim")
+        else:
+            raise ValueError(f"Unsupported loss_type: {loss_type}")
+
         # Compile model
         self.model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=self.config['learning_rate']),
-            loss=SimpleLosses.combined_loss,
+            loss=selected_loss,
             metrics=['mae']
         )
         
         print(f"✅ Model built with {self.model.count_params():,} parameters")
         
         # Save model summary
-        with open(f"results/{self.config['model_name']}_summary.txt", 'w') as f:
+        summary_path = os.path.join(
+            self.config['results_dir'],
+            f"{self.config['model_name']}_summary.txt"
+        )
+        with open(summary_path, 'w', encoding='utf-8') as f:
             self.model.summary(print_fn=lambda x: f.write(x + '\n'))
     
     def setup_callbacks(self):
@@ -156,7 +184,7 @@ class UnderwaterTrainer:
         
         self.callbacks = [
             tf.keras.callbacks.ModelCheckpoint(
-                f"models/checkpoints/{self.config['model_name']}_best.h5",
+                os.path.join(self.config['checkpoint_dir'], f"{self.config['model_name']}_best.h5"),
                 monitor='val_loss',
                 save_best_only=True,
                 verbose=1
@@ -177,15 +205,20 @@ class UnderwaterTrainer:
         ]
         
         if self.config['use_tensorboard']:
-            log_dir = f"logs/{self.config['model_name']}"
-            self.callbacks.append(
-                tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
-            )
+            try:
+                import tensorboard  # noqa: F401
+                log_dir = f"logs/{self.config['model_name']}"
+                self.callbacks.append(
+                    tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+                )
+            except Exception:
+                print("⚠️ TensorBoard unavailable; continuing without TensorBoard callback.")
         
         # CSV logger for easy progress monitoring
-        csv_log_path = f"logs/csv/{self.config['model_name']}_training.csv"
-        os.makedirs("logs/csv", exist_ok=True)
-        self.callbacks.append(tf.keras.callbacks.CSVLogger(csv_log_path))
+        if self.config['use_csv_logger']:
+            csv_log_path = f"logs/csv/{self.config['model_name']}_training.csv"
+            os.makedirs("logs/csv", exist_ok=True)
+            self.callbacks.append(tf.keras.callbacks.CSVLogger(csv_log_path))
         
         print(f"✅ Created {len(self.callbacks)} callbacks")
     
@@ -202,15 +235,34 @@ class UnderwaterTrainer:
             print(f"   Validation steps: {validation_steps}")
         
         # Train model
-        self.history = self.model.fit(
-            self.train_dataset,
-            validation_data=self.val_dataset,
-            epochs=self.config['epochs'],
-            steps_per_epoch=steps_per_epoch,
-            validation_steps=validation_steps,
-            callbacks=self.callbacks,
-            verbose=1
-        )
+        try:
+            self.history = self.model.fit(
+                self.train_dataset,
+                validation_data=self.val_dataset,
+                epochs=self.config['epochs'],
+                steps_per_epoch=steps_per_epoch,
+                validation_steps=validation_steps,
+                callbacks=self.callbacks,
+                verbose=1
+            )
+        except Exception as exc:
+            if "TensorBoard is not installed" in str(exc) or "TBNotInstalledError" in type(exc).__name__:
+                print("⚠️ TensorBoard runtime unavailable; retrying training without TensorBoard callback.")
+                self.callbacks = [
+                    callback for callback in self.callbacks
+                    if not isinstance(callback, tf.keras.callbacks.TensorBoard)
+                ]
+                self.history = self.model.fit(
+                    self.train_dataset,
+                    validation_data=self.val_dataset,
+                    epochs=self.config['epochs'],
+                    steps_per_epoch=steps_per_epoch,
+                    validation_steps=validation_steps,
+                    callbacks=self.callbacks,
+                    verbose=1
+                )
+            else:
+                raise
         
         print("\n✅ Training complete!")
         
@@ -218,14 +270,53 @@ class UnderwaterTrainer:
         self.plot_history()
         
         # Save final model in both formats
-        final_h5 = f"models/checkpoints/{self.config['model_name']}_final.h5"
-        final_keras = f"models/checkpoints/{self.config['model_name']}_final.keras"
+        final_h5 = os.path.join(self.config['checkpoint_dir'], f"{self.config['model_name']}_final.h5")
+        final_keras = os.path.join(self.config['checkpoint_dir'], f"{self.config['model_name']}_final.keras")
         self.model.save(final_h5)
         self.model.save(final_keras)
         print(f"💾 Final model saved to: {final_h5}")
         print(f"💾 Final model saved to: {final_keras}")
+
+        self._record_training_metadata(final_h5, final_keras)
         
         return self.history
+
+    def _record_training_metadata(self, final_h5, final_keras):
+        """Record a training run and its artifacts in the model registry."""
+        metrics = {
+            'final_loss': self.history.history['loss'][-1],
+            'final_mae': self.history.history.get('mae', [None])[-1],
+            'final_val_loss': self.history.history.get('val_loss', [None])[-1],
+            'final_val_mae': self.history.history.get('val_mae', [None])[-1],
+            'epochs_ran': len(self.history.epoch),
+        }
+
+        artifacts = {
+            'best_checkpoint': os.path.join(
+                self.config['checkpoint_dir'],
+                f"{self.config['model_name']}_best.h5"
+            ),
+            'final_h5': final_h5,
+            'final_keras': final_keras,
+            'history_plot': os.path.join(
+                self.config['results_dir'],
+                'training_plots',
+                f"{self.config['model_name']}_history.png"
+            ),
+            'sample_plot': os.path.join(
+                self.config['results_dir'],
+                'training_plots',
+                f"{self.config['model_name']}_samples.png"
+            ),
+        }
+
+        registry = ModelRegistry(self.config['registry_path'])
+        registry.register_training_run(
+            run_name=self.config['model_name'],
+            config=self.config,
+            metrics=metrics,
+            artifacts=artifacts,
+        )
     
     def plot_history(self):
         """Plot training history"""
@@ -256,10 +347,15 @@ class UnderwaterTrainer:
             axes[1].grid(True, alpha=0.3)
         
         plt.tight_layout()
-        plt.savefig(f"results/training_plots/{self.config['model_name']}_history.png", dpi=150)
+        history_plot_path = os.path.join(
+            self.config['results_dir'],
+            'training_plots',
+            f"{self.config['model_name']}_history.png"
+        )
+        plt.savefig(history_plot_path, dpi=150)
         plt.close(fig)
         
-        print(f"📊 Training history saved to results/training_plots/{self.config['model_name']}_history.png")
+        print(f"📊 Training history saved to {history_plot_path}")
     
     def evaluate(self):
         """Evaluate model on validation data"""
@@ -317,24 +413,24 @@ class UnderwaterTrainer:
                 axes[i, 2].axis('off')
             
             plt.tight_layout()
-            plt.savefig(f"results/training_plots/{self.config['model_name']}_samples.png", dpi=150)
+            sample_plot_path = os.path.join(
+                self.config['results_dir'],
+                'training_plots',
+                f"{self.config['model_name']}_samples.png"
+            )
+            plt.savefig(sample_plot_path, dpi=150)
             plt.close(fig)
             
             print(f"✅ Sample predictions saved")
 
 def main():
     """Main training function"""
-    
-    # Configuration
-    config = {
-        'data_path': 'data',
-        'img_size': 128,
-        'batch_size': 8,
-        'epochs': 50,
-        'learning_rate': 1e-4,
-        'validation_split': 0.2,
-    }
-    
+
+    try:
+        config = load_runtime_config()
+    except ConfigError as exc:
+        raise SystemExit(f"Configuration error: {exc}") from exc
+
     # Create trainer
     trainer = UnderwaterTrainer(config)
     
