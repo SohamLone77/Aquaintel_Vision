@@ -1,5 +1,8 @@
 import io
 import json
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import cv2
@@ -9,6 +12,7 @@ import streamlit as st
 import tensorflow as tf
 from PIL import Image
 
+from detect_threats import UnderwaterThreatDetector
 from utils.config_loader import load_runtime_config
 from utils.gpu import configure_tensorflow_device
 
@@ -34,18 +38,53 @@ def load_model(model_path_str: str):
     return tf.keras.models.load_model(model_path_str, compile=False)
 
 
+@st.cache_data
+def get_model_input_size(model_path_str: str):
+    model = tf.keras.models.load_model(model_path_str, compile=False)
+    input_shape = model.input_shape
+    if isinstance(input_shape, (list, tuple)) and len(input_shape) >= 3 and input_shape[1]:
+        return int(input_shape[1])
+    return 128
+
+
 def preprocess_image(uploaded: Image.Image, img_size: int):
     arr = np.array(uploaded.convert("RGB"))
-    resized = cv2.resize(arr, (img_size, img_size), interpolation=cv2.INTER_AREA)
-    x = resized.astype(np.float32) / 255.0
+    return preprocess_rgb_array(arr, img_size)
+
+
+def preprocess_rgb_array(arr: np.ndarray, img_size: int):
+    h, w = arr.shape[:2]
+
+    # Letterbox to avoid aspect-ratio distortion before inference.
+    scale = min(img_size / max(1, w), img_size / max(1, h))
+    new_w = max(1, int(round(w * scale)))
+    new_h = max(1, int(round(h * scale)))
+
+    resized = cv2.resize(arr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    canvas = np.zeros((img_size, img_size, 3), dtype=np.uint8)
+
+    x0 = (img_size - new_w) // 2
+    y0 = (img_size - new_h) // 2
+    canvas[y0:y0 + new_h, x0:x0 + new_w] = resized
+
+    x = canvas.astype(np.float32) / 255.0
     x = np.expand_dims(x, axis=0)
-    return arr, x
+
+    meta = {"x0": x0, "y0": y0, "new_w": new_w, "new_h": new_h}
+    return arr, x, meta
 
 
-def postprocess_prediction(pred):
+def postprocess_prediction(pred, meta: dict, output_size: tuple[int, int]):
     pred = np.clip(pred, 0.0, 1.0)
     pred = (pred * 255.0).astype(np.uint8)
-    return pred
+
+    x0 = int(meta["x0"])
+    y0 = int(meta["y0"])
+    new_w = int(meta["new_w"])
+    new_h = int(meta["new_h"])
+
+    cropped = pred[y0:y0 + new_h, x0:x0 + new_w]
+    return cv2.resize(cropped, output_size, interpolation=cv2.INTER_CUBIC)
 
 
 def image_to_download_bytes(img_array: np.ndarray):
@@ -55,9 +94,97 @@ def image_to_download_bytes(img_array: np.ndarray):
     return buffer.getvalue()
 
 
+def fuse_details_from_original(
+    original_rgb: np.ndarray,
+    enhanced_rgb: np.ndarray,
+    detail_strength: float = 0.45,
+    sharpen_amount: float = 0.4,
+):
+    """Recover high-frequency detail from the original while keeping enhanced color tone."""
+    detail_strength = float(np.clip(detail_strength, 0.0, 1.0))
+    sharpen_amount = float(np.clip(sharpen_amount, 0.0, 2.0))
+
+    base = enhanced_rgb.astype(np.float32)
+    orig = original_rgb.astype(np.float32)
+
+    # High-frequency residual from original image.
+    blur = cv2.GaussianBlur(orig, (0, 0), sigmaX=1.2, sigmaY=1.2)
+    high_freq = orig - blur
+
+    fused = base + (detail_strength * high_freq)
+
+    if sharpen_amount > 0.0:
+        # Mild unsharp mask on fused result.
+        fused_blur = cv2.GaussianBlur(fused, (0, 0), sigmaX=1.0, sigmaY=1.0)
+        fused = cv2.addWeighted(fused, 1.0 + sharpen_amount, fused_blur, -sharpen_amount, 0)
+
+    return np.clip(fused, 0, 255).astype(np.uint8)
+
+
 def run_inference(model, input_batch):
     pred = model.predict(input_batch, verbose=0)
     return pred[0]
+
+
+def make_web_preview_video(source_path: Path):
+    """Transcode to a browser-friendly H.264 MP4 when ffmpeg is available."""
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path is None:
+        try:
+            import imageio_ffmpeg
+
+            ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            ffmpeg_path = None
+
+    if ffmpeg_path is None:
+        return source_path, "FFmpeg not found (system or bundled). Preview may fail in some browsers for MPEG-4 output codecs."
+
+    preview_path = source_path.with_name(f"{source_path.stem}_web.mp4")
+    cmd = [
+        ffmpeg_path,
+        "-y",
+        "-i",
+        str(source_path),
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        str(preview_path),
+    ]
+
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180)
+    except Exception:
+        return source_path, "Could not transcode preview to H.264. Downloaded video is still available."
+
+    if preview_path.exists() and preview_path.stat().st_size > 0:
+        return preview_path, None
+
+    return source_path, "Preview transcode output was empty. Downloaded video is still available."
+
+
+def list_yolo_model_files():
+    candidates = sorted(
+        Path("runs").glob("**/underwater_threat_detector/weights/best.pt"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    # Add pre-trained fallback as a virtual option.
+    return ["yolov8n.pt"] + [str(p).replace("\\", "/") for p in candidates]
+
+
+@st.cache_resource
+def load_threat_detector(enhancement_model_path: str, yolo_model_path: str, confidence_threshold: float):
+    return UnderwaterThreatDetector(
+        enhancement_model_path=enhancement_model_path,
+        yolo_model_path=yolo_model_path,
+        confidence_threshold=confidence_threshold,
+        enhance_size=0,
+    )
 
 
 def get_run_name_from_model_path(model_path: Path):
@@ -193,6 +320,15 @@ def load_history(run_name: str, logs_dir: Path):
 def run_inference_view(model_choice: Path, img_size: int, registry_data: dict, logs_dir: Path):
     run_name = get_run_name_from_model_path(model_choice)
 
+    st.markdown("### Output Detail Controls")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        enable_detail_fusion = st.checkbox("Recover fine detail from original", value=True)
+        detail_strength = st.slider("Detail strength", min_value=0.0, max_value=1.0, value=0.45, step=0.05)
+    with col_b:
+        enable_sharpen = st.checkbox("Apply mild sharpening", value=True)
+        sharpen_amount = st.slider("Sharpen amount", min_value=0.0, max_value=1.5, value=0.40, step=0.05)
+
     uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "bmp"])
 
     if uploaded_file is None:
@@ -202,13 +338,32 @@ def run_inference_view(model_choice: Path, img_size: int, registry_data: dict, l
         return
 
     pil_image = Image.open(uploaded_file)
-    original_arr, model_input = preprocess_image(pil_image, img_size)
+    original_arr, model_input, preprocess_meta = preprocess_image(pil_image, img_size)
 
     if st.button("Enhance Image", type="primary"):
         with st.spinner("Running inference..."):
             model = load_model(str(model_choice))
             prediction = run_inference(model, model_input)
-            enhanced = postprocess_prediction(prediction)
+            h, w = original_arr.shape[:2]
+            enhanced = postprocess_prediction(prediction, preprocess_meta, (w, h))
+
+            if enable_detail_fusion:
+                enhanced = fuse_details_from_original(
+                    original_rgb=original_arr,
+                    enhanced_rgb=enhanced,
+                    detail_strength=detail_strength,
+                    sharpen_amount=(sharpen_amount if enable_sharpen else 0.0),
+                )
+            elif enable_sharpen and sharpen_amount > 0.0:
+                enhanced_blur = cv2.GaussianBlur(enhanced.astype(np.float32), (0, 0), sigmaX=1.0, sigmaY=1.0)
+                enhanced = cv2.addWeighted(
+                    enhanced.astype(np.float32),
+                    1.0 + sharpen_amount,
+                    enhanced_blur,
+                    -sharpen_amount,
+                    0,
+                )
+                enhanced = np.clip(enhanced, 0, 255).astype(np.uint8)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -228,6 +383,317 @@ def run_inference_view(model_choice: Path, img_size: int, registry_data: dict, l
 
     st.markdown("### Model Metadata")
     show_run_metadata(registry_data, run_name, model_choice, logs_dir)
+
+
+def run_video_view(model_choice: Path, img_size: int):
+    st.markdown("### Video Enhancement")
+    st.caption("Upload a video, process it with the selected model, and download the enhanced output.")
+
+    preset = st.selectbox(
+        "Quality preset",
+        options=["Fast", "Balanced", "Sharp", "Custom"],
+        index=2,
+        key="video_quality_preset",
+    )
+
+    preset_values = {
+        "Fast": {"enable_detail_fusion": False, "detail_strength": 0.0, "sharpen_amount": 0.0},
+        "Balanced": {"enable_detail_fusion": True, "detail_strength": 0.45, "sharpen_amount": 0.30},
+        "Sharp": {"enable_detail_fusion": True, "detail_strength": 0.60, "sharpen_amount": 0.45},
+    }
+
+    if preset == "Custom":
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            enable_detail_fusion = st.checkbox("Recover detail from original", value=True, key="video_detail_fusion")
+        with col_b:
+            detail_strength = st.slider(
+                "Detail strength",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.60,
+                step=0.05,
+                key="video_detail_strength",
+            )
+        with col_c:
+            sharpen_amount = st.slider(
+                "Sharpen amount",
+                min_value=0.0,
+                max_value=1.5,
+                value=0.45,
+                step=0.05,
+                key="video_sharpen_amount",
+            )
+    else:
+        selected = preset_values[preset]
+        enable_detail_fusion = selected["enable_detail_fusion"]
+        detail_strength = selected["detail_strength"]
+        sharpen_amount = selected["sharpen_amount"]
+        st.caption(
+            f"Preset settings -> detail recovery: {enable_detail_fusion}, "
+            f"detail strength: {detail_strength:.2f}, sharpen: {sharpen_amount:.2f}"
+        )
+
+    max_frames = st.slider(
+        "Max frames to process (0 = all)",
+        min_value=0,
+        max_value=3000,
+        value=0,
+        step=50,
+        key="video_max_frames",
+    )
+
+    uploaded_video = st.file_uploader(
+        "Upload video",
+        type=["mp4", "avi", "mov", "mkv"],
+        key="video_uploader",
+    )
+
+    if uploaded_video is None:
+        st.info("Upload a video file to start processing.")
+        return
+
+    st.video(uploaded_video)
+
+    if not st.button("Enhance Video", type="primary", key="enhance_video_button"):
+        return
+
+    results_dir = Path("results/processed_videos")
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    suffix = Path(uploaded_video.name).suffix if Path(uploaded_video.name).suffix else ".mp4"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_input:
+        temp_input.write(uploaded_video.getbuffer())
+        input_path = Path(temp_input.name)
+
+    safe_model_name = model_choice.stem.replace(" ", "_")
+    output_path = results_dir / f"{Path(uploaded_video.name).stem}_enhanced_{safe_model_name}.mp4"
+
+    cap = cv2.VideoCapture(str(input_path))
+    if not cap.isOpened():
+        st.error("Could not open uploaded video.")
+        try:
+            input_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return
+
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        fps = 24.0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    frames_target = total_frames if max_frames == 0 else min(total_frames, max_frames)
+    if frames_target <= 0:
+        st.error("Video has no readable frames.")
+        cap.release()
+        try:
+            input_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return
+
+    st.write(f"Resolution: {width} x {height} | FPS: {fps:.1f} | Frames: {frames_target}")
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+    model = load_model(str(model_choice))
+
+    progress = st.progress(0)
+    status = st.empty()
+
+    processed = 0
+    while processed < frames_target:
+        ok, frame_bgr = cap.read()
+        if not ok:
+            break
+
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        original_rgb, model_input, preprocess_meta = preprocess_rgb_array(frame_rgb, img_size)
+
+        prediction = run_inference(model, model_input)
+        enhanced_rgb = postprocess_prediction(prediction, preprocess_meta, (width, height))
+
+        if enable_detail_fusion:
+            enhanced_rgb = fuse_details_from_original(
+                original_rgb=original_rgb,
+                enhanced_rgb=enhanced_rgb,
+                detail_strength=detail_strength,
+                sharpen_amount=sharpen_amount,
+            )
+
+        enhanced_bgr = cv2.cvtColor(enhanced_rgb, cv2.COLOR_RGB2BGR)
+        writer.write(enhanced_bgr)
+
+        processed += 1
+        progress.progress(int((processed / frames_target) * 100))
+        status.text(f"Processed {processed}/{frames_target} frames")
+
+    cap.release()
+    writer.release()
+    try:
+        input_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    if processed == 0:
+        st.error("No frames were processed.")
+        return
+
+    st.success(f"Video processing complete: {processed} frames")
+    preview_path, preview_warning = make_web_preview_video(output_path)
+    if preview_warning:
+        st.warning(preview_warning)
+
+    st.video(preview_path.read_bytes())
+
+    with open(output_path, "rb") as f:
+        st.download_button(
+            label="Download enhanced video",
+            data=f.read(),
+            file_name=output_path.name,
+            mime="video/mp4",
+            key="download_enhanced_video",
+        )
+
+
+def run_threat_detection_view(model_choice: Path):
+    st.markdown("### Threat Detection (Enhancement + YOLO)")
+    st.caption("Run underwater threat detection on image or video with the selected enhancement model.")
+
+    yolo_options = list_yolo_model_files()
+    yolo_choice = st.selectbox("YOLO model", options=yolo_options, index=0, key="threat_yolo_model")
+    conf = st.slider("Confidence threshold", min_value=0.05, max_value=0.95, value=0.50, step=0.05, key="threat_conf")
+
+    detector = load_threat_detector(str(model_choice), yolo_choice, float(conf))
+    mode = st.radio("Threat mode", options=["Image", "Video"], horizontal=True, key="threat_mode")
+
+    if mode == "Image":
+        uploaded_img = st.file_uploader(
+            "Upload image for threat detection",
+            type=["jpg", "jpeg", "png", "bmp"],
+            key="threat_image_uploader",
+        )
+
+        if uploaded_img is None:
+            st.info("Upload an image to run threat detection.")
+            return
+
+        img = np.array(Image.open(uploaded_img).convert("RGB"))
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        if st.button("Detect Threats (Image)", type="primary", key="threat_image_btn"):
+            with st.spinner("Running threat detection..."):
+                detections, annotated_bgr = detector.detect_threats(img_bgr)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("### Input")
+                st.image(img, width="stretch")
+            with col2:
+                st.markdown("### Detection Output")
+                annotated_rgb = cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)
+                st.image(annotated_rgb, width="stretch")
+
+            st.write(f"Detections found: {len(detections)}")
+            if detections:
+                st.dataframe(pd.DataFrame(detections), width="stretch")
+
+            st.download_button(
+                label="Download detected image",
+                data=image_to_download_bytes(cv2.cvtColor(annotated_bgr, cv2.COLOR_BGR2RGB)),
+                file_name=f"detected_{Path(uploaded_img.name).stem}.png",
+                mime="image/png",
+                key="threat_image_download",
+            )
+
+        return
+
+    uploaded_video = st.file_uploader(
+        "Upload video for threat detection",
+        type=["mp4", "avi", "mov", "mkv"],
+        key="threat_video_uploader",
+    )
+    if uploaded_video is None:
+        st.info("Upload a video to run threat detection.")
+        return
+
+    st.video(uploaded_video)
+    max_frames = st.slider(
+        "Max frames to process (0 = all)",
+        min_value=0,
+        max_value=3000,
+        value=0,
+        step=50,
+        key="threat_video_max_frames",
+    )
+
+    if not st.button("Detect Threats (Video)", type="primary", key="threat_video_btn"):
+        return
+
+    out_dir = Path("results/detections")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    suffix = Path(uploaded_video.name).suffix if Path(uploaded_video.name).suffix else ".mp4"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_input:
+        temp_input.write(uploaded_video.getbuffer())
+        input_path = Path(temp_input.name)
+
+    output_path = out_dir / f"{Path(uploaded_video.name).stem}_detected.mp4"
+    cap = cv2.VideoCapture(str(input_path))
+    if not cap.isOpened():
+        st.error("Could not open uploaded video.")
+        return
+
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        fps = 24.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    frames_target = total if max_frames == 0 else min(total, max_frames)
+
+    writer = cv2.VideoWriter(str(output_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+    progress = st.progress(0)
+    status = st.empty()
+
+    all_detections = []
+    processed = 0
+    while processed < frames_target:
+        ok, frame = cap.read()
+        if not ok:
+            break
+
+        detections, annotated = detector.detect_threats(frame)
+        writer.write(annotated)
+        all_detections.extend(detections)
+
+        processed += 1
+        progress.progress(int((processed / max(1, frames_target)) * 100))
+        status.text(f"Processed {processed}/{frames_target} frames")
+
+    cap.release()
+    writer.release()
+    try:
+        input_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    st.success(f"Video threat detection complete: {processed} frames | detections: {len(all_detections)}")
+    preview_path, preview_warning = make_web_preview_video(output_path)
+    if preview_warning:
+        st.warning(preview_warning)
+    st.video(preview_path.read_bytes())
+
+    with open(output_path, "rb") as f:
+        st.download_button(
+            label="Download detected video",
+            data=f.read(),
+            file_name=output_path.name,
+            mime="video/mp4",
+            key="threat_video_download",
+        )
 
 
 def run_comparison_view(registry_data: dict, models, logs_dir: Path):
@@ -375,7 +841,6 @@ def main():
         st.error(f"Failed to load config.yaml: {exc}")
         st.stop()
 
-    img_size = int(runtime_cfg.get("img_size", 128))
     checkpoint_dir = Path(runtime_cfg.get("checkpoint_dir", "models/checkpoints"))
     registry_path = Path(runtime_cfg.get("registry_path", "results/model_registry.json"))
     logs_dir = Path("logs/csv")
@@ -393,16 +858,32 @@ def main():
 
     with st.sidebar:
         st.header("Settings")
+        default_index = 0
+        preferred = [
+            i for i, p in enumerate(models)
+            if ("256" in p.stem and p.suffix == ".keras" and "_final" in p.stem)
+        ]
+        if preferred:
+            default_index = preferred[0]
+
         model_choice = st.selectbox(
             "Model checkpoint",
             options=models,
+            index=default_index,
             format_func=lambda p: p.name,
         )
-        st.write(f"Input size: {img_size} x {img_size}")
+        img_size = get_model_input_size(str(model_choice))
+        st.write(f"Model input size: {img_size} x {img_size}")
 
-    tab_infer, tab_compare, tab_recommend = st.tabs(["Inference", "Run Comparison", "Best Run Recommender"])
+    tab_infer, tab_video, tab_threat, tab_compare, tab_recommend = st.tabs(
+        ["Inference", "Video", "Threat Detection", "Run Comparison", "Best Run Recommender"]
+    )
     with tab_infer:
         run_inference_view(model_choice=model_choice, img_size=img_size, registry_data=registry_data, logs_dir=logs_dir)
+    with tab_video:
+        run_video_view(model_choice=model_choice, img_size=img_size)
+    with tab_threat:
+        run_threat_detection_view(model_choice=model_choice)
     with tab_compare:
         run_comparison_view(registry_data=registry_data, models=models, logs_dir=logs_dir)
     with tab_recommend:

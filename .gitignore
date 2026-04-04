@@ -38,3 +38,13 @@ results/training_plots/
 results/sharp_outputs/
 results/comparison_*.png
 quick_test_result.png
+
+# YOLO/Detection generated artifacts
+runs/
+underwater_dataset/
+results/detections/
+results/yolo_training/
+results/processed_videos/
+yolov8n.pt
+test_underwater_video.mp4
+test_enhanced.mp4

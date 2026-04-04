@@ -10,3 +10,6 @@ PyYAML>=6.0
 requests>=2.31
 streamlit>=1.38
 tqdm>=4.66
+ultralytics>=8.2
+seaborn>=0.13
+imageio-ffmpeg>=0.6
