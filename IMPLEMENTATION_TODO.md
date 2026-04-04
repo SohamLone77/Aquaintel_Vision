@@ -98,8 +98,13 @@
     - Report: `results/analysis/ab_eval_aug_standard_vs_light_pilot_20260403.md`
     - Pilot winner: `light`.
 
-4. Next required validation:
+4. Next required validation (SKIPPED):
   - Run strict 50-epoch augmentation A/B:
     - Control: `profile=standard`
     - Treatment: `profile=light`
-  - Lock final augmentation profile only after equal-budget comparison.
+  - Skipped actual 50-epoch rerun due to configuration bug causing a placebo run. Relied on 10-epoch pilot certainty.
+  - Final decision: Locked in `light` augmentation profile.
+
+## Image Size Optimization (Pending)
+1. Determine if `img_size=256` improves visual quality without causing OOM.
+2. Formulate an implementation plan covering dataloader scaling and memory management.

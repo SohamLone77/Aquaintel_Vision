@@ -21,14 +21,14 @@ class SimpleDataLoader:
         self.ref_folder = os.path.join(data_path, "reference")
 
         if not os.path.exists(self.raw_folder):
-            print(f"❌ Raw folder not found: {self.raw_folder}")
+            print(f"Raw folder not found: {self.raw_folder}")
             os.makedirs(self.raw_folder, exist_ok=True)
-            print(f"✅ Created: {self.raw_folder}")
+            print(f"Created: {self.raw_folder}")
 
         if not os.path.exists(self.ref_folder):
-            print(f"❌ Reference folder not found: {self.ref_folder}")
+            print(f"Reference folder not found: {self.ref_folder}")
             os.makedirs(self.ref_folder, exist_ok=True)
-            print(f"✅ Created: {self.ref_folder}")
+            print(f"Created: {self.ref_folder}")
 
         self.raw_files = self._get_image_files(self.raw_folder)
         self.ref_files = self._get_image_files(self.ref_folder)
@@ -37,9 +37,9 @@ class SimpleDataLoader:
         self.raw_files = self.raw_files[:n_pairs]
         self.ref_files = self.ref_files[:n_pairs]
 
-        print(f"\n📊 Found {len(self.raw_files)} image pairs")
-        print(f"📐 Image size: {img_size}x{img_size}")
-        print(f"📦 Batch size: {batch_size}")
+        print(f"Found {len(self.raw_files)} image pairs")
+        print(f"Image size: {img_size}x{img_size}")
+        print(f"Batch size: {batch_size}")
 
         self._split_indices()
 
@@ -62,13 +62,13 @@ class SimpleDataLoader:
         self.train_indices = indices[:split]
         self.val_indices = indices[split:]
 
-        print(f"📊 Training samples: {len(self.train_indices)}")
-        print(f"📊 Validation samples: {len(self.val_indices)}")
+        print(f"Training samples: {len(self.train_indices)}")
+        print(f"Validation samples: {len(self.val_indices)}")
 
     def load_image(self, path):
         img = cv2.imread(path)
         if img is None:
-            print(f"⚠️ Could not load: {path}")
+            print(f"Could not load: {path}")
             return np.zeros((self.img_size, self.img_size, 3), dtype=np.float32)
 
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -91,7 +91,7 @@ class SimpleDataLoader:
         indices = self.train_indices if split == "train" else self.val_indices
 
         if len(indices) == 0:
-            print(f"⚠️ No {split} data available")
+            print(f"No {split} data available")
             return None
 
         dataset = tf.data.Dataset.from_generator(
@@ -119,4 +119,4 @@ if __name__ == "__main__":
             print(f"Batch shapes: {x.shape}, {y.shape}")
             print(f"Value range: [{x.numpy().min():.3f}, {x.numpy().max():.3f}]")
 
-    print("\n✅ Data loader test complete!")
+    print("\nData loader test complete")

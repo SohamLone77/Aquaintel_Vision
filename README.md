@@ -2,6 +2,18 @@
 
 Underwater image enhancement training workspace based on a U-Net pipeline.
 
+## Repository Structure
+
+Core code is organized by responsibility:
+
+- `models/`: network architectures (for example `models/basic_unet.py`)
+- `training/`: data pipelines and callback helpers
+- `losses/`: loss definitions
+- `scripts/`: utility and validation scripts
+- root entrypoints: `train_unet.py`, `train_sharp.py`, `resume_sharp.py`, `streamlit_app.py`, `video_processor.py`
+
+Generated artifacts and experiment outputs stay under `logs/`, `results/`, and `models/checkpoints/`.
+
 ## Two Pipelines
 
 ### Standard training path

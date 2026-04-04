@@ -4,6 +4,7 @@
 import os
 import sys
 from datetime import datetime
+from importlib.util import find_spec
 from pathlib import Path
 
 import matplotlib
@@ -14,13 +15,11 @@ import tensorflow as tf
 # Add project root to path
 sys.path.append(str(Path(__file__).parent))
 
-try:
-    from models.basic_unet import build_basic_unet
-except ModuleNotFoundError:
-    from basic_unet import build_basic_unet
-
-from data_loader_simple import SimpleDataLoader
+from models.basic_unet import build_basic_unet
+from training.data_loader_simple import SimpleDataLoader
 from losses.simple_losses import SimpleLosses
+from utils.gpu import configure_tensorflow_device
+from utils.model_registry import ModelRegistry
 
 os.makedirs("models/checkpoints", exist_ok=True)
 os.makedirs("logs/csv", exist_ok=True)
@@ -34,13 +33,14 @@ class SharpTrainer:
     def __init__(self, config=None):
         self.config = {
             "data_path": "data",
-            "img_size": 256,
+            "img_size": 128,
             "batch_size": 2,
             "epochs": 30,
             "learning_rate": 1e-4,
             "validation_split": 0.2,
-            "model_name": f"sharp_unet_{datetime.now().strftime('%Y%m%d_%H%M')}",
+            "model_name": f"sharp128_unet_{datetime.now().strftime('%Y%m%d_%H%M')}",
             "loss_type": "sharp",
+            "registry_path": "results/model_registry.json",
         }
 
         if config:
@@ -52,6 +52,12 @@ class SharpTrainer:
         print("\n📋 Configuration:")
         for key, value in self.config.items():
             print(f"   {key}: {value}")
+
+        device_info = configure_tensorflow_device(self.config)
+        print(
+            f"\n🧠 TensorFlow device: {device_info['device']} "
+            f"(GPUs: {device_info['gpu_count']}, mixed_precision: {device_info['mixed_precision']})"
+        )
 
         self.setup_data()
         self.setup_model()
@@ -131,7 +137,8 @@ class SharpTrainer:
         ]
 
         try:
-            import tensorboard  # noqa: F401
+            if find_spec("tensorboard") is None:
+                raise ImportError("tensorboard not installed")
             callbacks.append(
                 tf.keras.callbacks.TensorBoard(
                     log_dir=f"logs/{self.config['model_name']}",
@@ -161,7 +168,8 @@ class SharpTrainer:
         print(f"💾 Final model saved (H5): {final_path_h5}")
         print(f"💾 Final model saved (Keras): {final_path_keras}")
 
-        self.save_training_history(history)
+        history_plot = self.save_training_history(history)
+        self.record_training_metadata(history, final_path_h5, final_path_keras, history_plot)
         return history
 
     def save_training_history(self, history):
@@ -192,12 +200,38 @@ class SharpTrainer:
         save_path = f"results/training_plots/{self.config['model_name']}_history.png"
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
         print(f"📊 Training history saved: {save_path}")
+        return save_path
+
+    def record_training_metadata(self, history, final_h5, final_keras, history_plot):
+        metrics = {
+            "final_loss": float(history.history["loss"][-1]),
+            "final_mae": float(history.history.get("mae", [0])[-1]),
+            "final_val_loss": float(history.history.get("val_loss", [0])[-1]),
+            "final_val_mae": float(history.history.get("val_mae", [0])[-1]),
+            "epochs_ran": len(history.epoch),
+        }
+
+        artifacts = {
+            "best_checkpoint": f"models/checkpoints/{self.config['model_name']}_best.h5",
+            "final_h5": final_h5,
+            "final_keras": final_keras,
+            "history_plot": history_plot,
+        }
+
+        registry = ModelRegistry(self.config["registry_path"])
+        registry.register_training_run(
+            run_name=self.config["model_name"],
+            config=self.config,
+            metrics=metrics,
+            artifacts=artifacts,
+        )
+        print(f"🗂️ Registered run metadata in {self.config['registry_path']}")
 
 
 def main():
     config = {
         "data_path": "data",
-        "img_size": 256,
+        "img_size": 128,
         "batch_size": 2,
         "epochs": 30,
         "learning_rate": 1e-4,

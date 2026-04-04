@@ -16,15 +16,15 @@ loss:
 
 augmentation:
   enabled: true
-  profile: standard
-  flip_prob: 0.5
-  vertical_flip_prob: 0.5
-  rotate_prob: 1.0
-  brightness_prob: 0.5
-  brightness_delta: 0.1
-  contrast_prob: 0.5
-  contrast_lower: 0.8
-  contrast_upper: 1.2
+  profile: light
+  flip_prob: 0.3
+  vertical_flip_prob: 0.2
+  rotate_prob: 0.5
+  brightness_prob: 0.3
+  brightness_delta: 0.05
+  contrast_prob: 0.3
+  contrast_lower: 0.9
+  contrast_upper: 1.1
 
 model:
   name_prefix: unet

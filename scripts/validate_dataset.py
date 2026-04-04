@@ -10,6 +10,7 @@ from PIL import Image
 _VALID_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".JPG", ".JPEG", ".PNG", ".BMP"}
 
 
+
 def _image_files(folder_path):
     if not folder_path.exists():
         return []

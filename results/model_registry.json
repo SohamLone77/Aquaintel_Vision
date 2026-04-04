@@ -427,5 +427,104 @@
       "history_plot": "results\\training_plots\\unet_augstd_20260403_ab50_history.png",
       "sample_plot": "results\\training_plots\\unet_augstd_20260403_ab50_samples.png"
     }
+  },
+  "unet_20260404_0816": {
+    "timestamp": "2026-04-04T09:25:30",
+    "config": {
+      "data_path": "data",
+      "img_size": 128,
+      "validation_split": 0.2,
+      "batch_size": 8,
+      "epochs": 50,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.5,
+      "augment_enabled": true,
+      "augmentation_profile": "light",
+      "augmentation": {
+        "flip_prob": 0.5,
+        "vertical_flip_prob": 0.5,
+        "rotate_prob": 1.0,
+        "brightness_prob": 0.5,
+        "brightness_delta": 0.1,
+        "contrast_prob": 0.5,
+        "contrast_lower": 0.8,
+        "contrast_upper": 1.2
+      },
+      "model_name": "unet_20260404_0816",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.06457465887069702,
+      "final_mae": 0.07683730125427246,
+      "final_val_loss": 0.07095114886760712,
+      "final_val_mae": 0.07726314663887024,
+      "epochs_ran": 50
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet_20260404_0816_best.h5",
+      "final_h5": "models/checkpoints\\unet_20260404_0816_final.h5",
+      "final_keras": "models/checkpoints\\unet_20260404_0816_final.keras",
+      "history_plot": "results\\training_plots\\unet_20260404_0816_history.png",
+      "sample_plot": "results\\training_plots\\unet_20260404_0816_samples.png"
+    }
+  },
+  "sharp_resume_20260404_1040": {
+    "timestamp": "2026-04-04T10:42:09",
+    "config": {
+      "source_model": "models/checkpoints\\unet_20260404_0816_final.keras",
+      "img_size": 128,
+      "batch_size": 2,
+      "epochs": 1,
+      "learning_rate": 1e-05,
+      "loss_type": "sharp",
+      "registry_path": "results/model_registry.json",
+      "model_name": "sharp_resume_20260404_1040"
+    },
+    "metrics": {
+      "final_loss": 0.06431357562541962,
+      "final_mae": 0.08620573580265045,
+      "final_val_loss": 0.0647687241435051,
+      "final_val_mae": 0.08259425312280655,
+      "epochs_ran": 1
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints/sharp_finetuned_20260404_1040_best.h5",
+      "final_h5": "models/checkpoints/sharp_model_final_20260404_1040.h5",
+      "history_plot": "results/training_plots/sharp_finetuned_20260404_1040_history.png",
+      "csv_log": "logs/csv/sharp_finetuned_20260404_1040.csv"
+    }
+  },
+  "sharp128_resume_20260404_1054": {
+    "timestamp": "2026-04-04T11:20:33",
+    "config": {
+      "source_model": "models/checkpoints\\sharp_model_final_20260404_1040.h5",
+      "img_size": 128,
+      "batch_size": 2,
+      "epochs": 20,
+      "learning_rate": 1e-05,
+      "loss_type": "sharp",
+      "registry_path": "results/model_registry.json",
+      "model_name": "sharp128_resume_20260404_1054"
+    },
+    "metrics": {
+      "final_loss": 0.05201762914657593,
+      "final_mae": 0.08233585953712463,
+      "final_val_loss": 0.06476115435361862,
+      "final_val_mae": 0.08633067458868027,
+      "epochs_ran": 14
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints/sharp_finetuned_20260404_1054_best.h5",
+      "final_h5": "models/checkpoints/sharp_model_final_20260404_1054.h5",
+      "history_plot": "results/training_plots/sharp_finetuned_20260404_1054_history.png",
+      "csv_log": "logs/csv/sharp_finetuned_20260404_1054.csv"
+    }
   }
 }

@@ -3,6 +3,7 @@
 
 import glob
 import os
+from typing import Dict, List, Tuple
 
 import cv2
 import matplotlib
@@ -10,6 +11,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+from skimage.metrics import peak_signal_noise_ratio as psnr
+from skimage.metrics import structural_similarity as ssim
+
+from utils.gpu import configure_tensorflow_device
 
 
 class ImageSharpener:
@@ -124,10 +129,55 @@ def create_comparison_grid(model, original_image, filename):
     )
 
 
-def batch_sharpen(max_images=None):
+def calculate_quality_metric(reference: np.ndarray, candidate: np.ndarray, metric: str) -> float:
+    ref = reference
+    cand = candidate
+    if cand.shape[:2] != ref.shape[:2]:
+        cand = cv2.resize(cand, (ref.shape[1], ref.shape[0]), interpolation=cv2.INTER_LANCZOS4)
+
+    if metric == "psnr":
+        return float(psnr(ref, cand, data_range=255))
+
+    # Default to SSIM.
+    return float(ssim(ref, cand, data_range=255, channel_axis=2))
+
+
+def select_best_method(
+    model,
+    original_image: np.ndarray,
+    reference_image: np.ndarray,
+    metric: str,
+    target_size: int = 512,
+) -> Tuple[str, np.ndarray, float, Dict[str, float]]:
+    method_map = {
+        "model": "none",
+        "unsharp": "unsharp",
+        "kernel": "kernel",
+        "adaptive": "adaptive",
+    }
+
+    scores: Dict[str, float] = {}
+    outputs: Dict[str, np.ndarray] = {}
+
+    for method_name, method_type in method_map.items():
+        output = enhance_with_sharpening(model, original_image, method=method_type, target_size=target_size)
+        outputs[method_name] = output
+        scores[method_name] = calculate_quality_metric(reference_image, output, metric)
+
+    best_method = max(scores, key=scores.get)
+    return best_method, outputs[best_method], scores[best_method], scores
+
+
+def batch_sharpen(max_images=None, auto_select=False, selection_metric="ssim"):
     print("=" * 60)
     print("BATCH SHARPENING PIPELINE")
     print("=" * 60)
+
+    device_info = configure_tensorflow_device({})
+    print(
+        f"\n🧠 TensorFlow device: {device_info['device']} "
+        f"(GPUs: {device_info['gpu_count']}, mixed_precision: {device_info['mixed_precision']})"
+    )
 
     model_path = find_latest_model()
     if not model_path:
@@ -150,7 +200,13 @@ def batch_sharpen(max_images=None):
         test_images = test_images[:max_images]
 
     print(f"\n🖼️ Found {len(test_images)} test images")
-    print("📐 Output size: 512x512 with sharpening\n")
+    if auto_select:
+        print(f"🎯 Auto-select mode: ON ({selection_metric.upper()})")
+        print("📐 Output size: 512x512, saving only best method per image\n")
+    else:
+        print("📐 Output size: 512x512 with sharpening\n")
+
+    auto_select_rows: List[Dict[str, str]] = []
 
     for i, img_path in enumerate(test_images):
         print(f"   [{i + 1}/{len(test_images)}] Processing: {os.path.basename(img_path)}")
@@ -158,20 +214,76 @@ def batch_sharpen(max_images=None):
         img = cv2.imread(img_path)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        methods = {
-            "original": "none",
-            "unsharp": "unsharp",
-            "kernel": "kernel",
-            "adaptive": "adaptive",
-        }
+        if auto_select:
+            ref_path = os.path.join("data", "reference", os.path.basename(img_path))
+            if os.path.exists(ref_path):
+                ref = cv2.imread(ref_path)
+                ref_rgb = cv2.cvtColor(ref, cv2.COLOR_BGR2RGB)
 
-        for method_name, method_type in methods.items():
-            enhanced = enhance_with_sharpening(model, img_rgb, method=method_type, target_size=512)
-            output_path = f"results/sharp_outputs/{method_name}_{os.path.basename(img_path)}"
-            cv2.imwrite(output_path, cv2.cvtColor(enhanced, cv2.COLOR_RGB2BGR))
+                best_method, best_img, best_score, all_scores = select_best_method(
+                    model,
+                    img_rgb,
+                    ref_rgb,
+                    metric=selection_metric,
+                    target_size=512,
+                )
+
+                output_path = f"results/sharp_outputs/best_{os.path.basename(img_path)}"
+                cv2.imwrite(output_path, cv2.cvtColor(best_img, cv2.COLOR_RGB2BGR))
+
+                auto_select_rows.append({
+                    "image": os.path.basename(img_path),
+                    "metric": selection_metric,
+                    "best_method": best_method,
+                    "best_score": f"{best_score:.6f}",
+                    "model_score": f"{all_scores['model']:.6f}",
+                    "unsharp_score": f"{all_scores['unsharp']:.6f}",
+                    "kernel_score": f"{all_scores['kernel']:.6f}",
+                    "adaptive_score": f"{all_scores['adaptive']:.6f}",
+                })
+            else:
+                fallback = enhance_with_sharpening(model, img_rgb, method="none", target_size=512)
+                output_path = f"results/sharp_outputs/best_{os.path.basename(img_path)}"
+                cv2.imwrite(output_path, cv2.cvtColor(fallback, cv2.COLOR_RGB2BGR))
+
+                auto_select_rows.append({
+                    "image": os.path.basename(img_path),
+                    "metric": selection_metric,
+                    "best_method": "model",
+                    "best_score": "NA",
+                    "model_score": "NA",
+                    "unsharp_score": "NA",
+                    "kernel_score": "NA",
+                    "adaptive_score": "NA",
+                })
+        else:
+            methods = {
+                "original": "none",
+                "unsharp": "unsharp",
+                "kernel": "kernel",
+                "adaptive": "adaptive",
+            }
+
+            for method_name, method_type in methods.items():
+                enhanced = enhance_with_sharpening(model, img_rgb, method=method_type, target_size=512)
+                output_path = f"results/sharp_outputs/{method_name}_{os.path.basename(img_path)}"
+                cv2.imwrite(output_path, cv2.cvtColor(enhanced, cv2.COLOR_RGB2BGR))
 
         if i == 0:
             create_comparison_grid(model, img_rgb, os.path.basename(img_path))
+
+    if auto_select and auto_select_rows:
+        summary_path = f"results/sharp_outputs/auto_select_{selection_metric}.csv"
+        with open(summary_path, "w", encoding="utf-8") as fp:
+            fp.write(
+                "image,metric,best_method,best_score,model_score,unsharp_score,kernel_score,adaptive_score\n"
+            )
+            for row in auto_select_rows:
+                fp.write(
+                    f"{row['image']},{row['metric']},{row['best_method']},{row['best_score']},"
+                    f"{row['model_score']},{row['unsharp_score']},{row['kernel_score']},{row['adaptive_score']}\n"
+                )
+        print(f"📊 Auto-select summary saved: {summary_path}")
 
     print("\n✅ All images processed!")
     print("📁 Results saved to: results/sharp_outputs/")
@@ -182,6 +294,21 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Batch sharpen model outputs")
     parser.add_argument("--max-images", type=int, default=None, help="Optional cap on number of images")
+    parser.add_argument(
+        "--auto-select",
+        action="store_true",
+        help="Save only the best method per image using reference metrics",
+    )
+    parser.add_argument(
+        "--selection-metric",
+        choices=["psnr", "ssim"],
+        default="ssim",
+        help="Metric used for best-method selection when --auto-select is enabled",
+    )
     args = parser.parse_args()
 
-    batch_sharpen(max_images=args.max_images)
+    batch_sharpen(
+        max_images=args.max_images,
+        auto_select=args.auto_select,
+        selection_metric=args.selection_metric,
+    )

@@ -10,6 +10,7 @@ import tensorflow as tf
 from PIL import Image
 
 from utils.config_loader import load_runtime_config
+from utils.gpu import configure_tensorflow_device
 
 st.set_page_config(page_title="Underwater Enhancer", page_icon="🌊", layout="wide")
 
@@ -68,25 +69,102 @@ def get_run_name_from_model_path(model_path: Path):
     return stem
 
 
-def show_run_metadata(registry_data: dict, run_name: str):
+def infer_pipeline_type(run_name: str, run_meta: dict | None = None):
+    """Infer whether a run belongs to standard or sharp pipeline."""
+    lowered = run_name.lower()
+    if lowered.startswith("sharp_") or "sharp" in lowered:
+        return "sharp"
+
+    if run_meta:
+        cfg = run_meta.get("config", {})
+        loss_type = str(cfg.get("loss_type", "")).lower()
+        if loss_type == "sharp":
+            return "sharp"
+
+    return "standard"
+
+
+def resolve_run_metadata(registry_data: dict, run_name: str, model_choice: Path):
+    """Resolve run metadata by run key or artifact path match."""
     run_meta = registry_data.get(run_name)
+    if run_meta:
+        return run_meta
+
+    model_name = model_choice.name.replace("\\", "/")
+    for _, candidate in registry_data.items():
+        artifacts = candidate.get("artifacts", {})
+        for artifact_path in artifacts.values():
+            if not artifact_path:
+                continue
+            artifact_name = str(artifact_path).replace("\\", "/").split("/")[-1]
+            if artifact_name == model_name:
+                return candidate
+
+    return None
+
+
+def build_history_fallback(run_name: str, logs_dir: Path, model_choice: Path):
+    """Create minimal metadata from CSV history + file stats when registry entry is missing."""
+    history_df = load_history(run_name, logs_dir)
+    if history_df is None or history_df.empty:
+        return None
+
+    metrics = {
+        "final_loss": float(history_df["loss"].iloc[-1]) if "loss" in history_df else None,
+        "final_mae": float(history_df["mae"].iloc[-1]) if "mae" in history_df else None,
+        "final_val_loss": float(history_df["val_loss"].iloc[-1]) if "val_loss" in history_df else None,
+        "final_val_mae": float(history_df["val_mae"].iloc[-1]) if "val_mae" in history_df else None,
+        "epochs_ran": int(len(history_df)),
+        "best_val_loss": float(history_df["val_loss"].min()) if "val_loss" in history_df else None,
+        "best_val_mae": float(history_df["val_mae"].min()) if "val_mae" in history_df else None,
+    }
+
+    return {
+        "config": {
+            "source": "history_fallback",
+            "model_file": model_choice.name,
+            "model_modified": model_choice.stat().st_mtime,
+        },
+        "metrics": metrics,
+    }
+
+
+def show_run_metadata(registry_data: dict, run_name: str, model_choice: Path, logs_dir: Path):
+    run_meta = resolve_run_metadata(registry_data, run_name, model_choice)
     if not run_meta:
-        st.info("No registry metadata found for selected model.")
-        return
+        run_meta = build_history_fallback(run_name, logs_dir, model_choice)
+        if run_meta:
+            st.info("Registry metadata not found. Showing metrics from training CSV fallback.")
+        else:
+            st.info("No registry metadata or history CSV found for selected model.")
+            return
 
     cfg = run_meta.get("config", {})
     metrics = run_meta.get("metrics", {})
+    pipeline_type = infer_pipeline_type(run_name, run_meta)
+
+    # Backfill best validation metrics from history when registry doesn't include them.
+    if metrics.get("best_val_loss") is None or metrics.get("best_val_mae") is None:
+        history_df = load_history(run_name, logs_dir)
+        if history_df is not None:
+            if metrics.get("best_val_loss") is None and "val_loss" in history_df.columns:
+                metrics["best_val_loss"] = float(history_df["val_loss"].min())
+            if metrics.get("best_val_mae") is None and "val_mae" in history_df.columns:
+                metrics["best_val_mae"] = float(history_df["val_mae"].min())
 
     left, right = st.columns(2)
     with left:
         st.markdown("### Training Config")
+        st.caption(f"Pipeline Type: **{pipeline_type}**")
         st.json({
+            "source": cfg.get("source", "registry"),
             "batch_size": cfg.get("batch_size"),
             "epochs": cfg.get("epochs"),
             "learning_rate": cfg.get("learning_rate"),
             "loss_type": cfg.get("loss_type"),
             "ssim_weight": cfg.get("ssim_weight"),
             "augmentation_profile": cfg.get("augmentation_profile"),
+            "model_file": cfg.get("model_file", model_choice.name),
         })
 
     with right:
@@ -97,6 +175,8 @@ def show_run_metadata(registry_data: dict, run_name: str):
             "final_val_loss": metrics.get("final_val_loss"),
             "final_val_mae": metrics.get("final_val_mae"),
             "epochs_ran": metrics.get("epochs_ran"),
+            "best_val_loss": metrics.get("best_val_loss"),
+            "best_val_mae": metrics.get("best_val_mae"),
         })
 
 
@@ -110,8 +190,7 @@ def load_history(run_name: str, logs_dir: Path):
         return None
 
 
-def run_inference_view(model_choice: Path, img_size: int, registry_path: Path):
-    model = load_model(str(model_choice))
+def run_inference_view(model_choice: Path, img_size: int, registry_data: dict, logs_dir: Path):
     run_name = get_run_name_from_model_path(model_choice)
 
     uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "bmp"])
@@ -119,7 +198,7 @@ def run_inference_view(model_choice: Path, img_size: int, registry_path: Path):
     if uploaded_file is None:
         st.info("Select a model and upload an image to start inference.")
         st.markdown("### Model Metadata")
-        show_run_metadata(load_registry(registry_path), run_name)
+        show_run_metadata(registry_data, run_name, model_choice, logs_dir)
         return
 
     pil_image = Image.open(uploaded_file)
@@ -127,6 +206,7 @@ def run_inference_view(model_choice: Path, img_size: int, registry_path: Path):
 
     if st.button("Enhance Image", type="primary"):
         with st.spinner("Running inference..."):
+            model = load_model(str(model_choice))
             prediction = run_inference(model, model_input)
             enhanced = postprocess_prediction(prediction)
 
@@ -147,7 +227,7 @@ def run_inference_view(model_choice: Path, img_size: int, registry_path: Path):
         )
 
     st.markdown("### Model Metadata")
-    show_run_metadata(load_registry(registry_path), run_name)
+    show_run_metadata(registry_data, run_name, model_choice, logs_dir)
 
 
 def run_comparison_view(registry_data: dict, models, logs_dir: Path):
@@ -170,6 +250,10 @@ def run_comparison_view(registry_data: dict, models, logs_dir: Path):
 
     metrics_a = registry_data.get(run_a, {}).get("metrics", {})
     metrics_b = registry_data.get(run_b, {}).get("metrics", {})
+    st.caption(
+        f"Run A pipeline: **{infer_pipeline_type(run_a, registry_data.get(run_a))}** | "
+        f"Run B pipeline: **{infer_pipeline_type(run_b, registry_data.get(run_b))}**"
+    )
 
     rows = []
     for metric in ["final_loss", "final_mae", "final_val_loss", "final_val_mae", "epochs_ran"]:
@@ -251,6 +335,7 @@ def run_recommender_view(registry_data: dict, models, logs_dir: Path):
         ranking_rows.append(
             {
                 "run_name": run_name,
+                "pipeline_type": infer_pipeline_type(run_name, registry_data.get(run_name)),
                 "score": metric_value,
                 "epochs": run_metrics.get("epochs_ran"),
                 "batch_size": run_cfg.get("batch_size"),
@@ -277,6 +362,12 @@ def run_recommender_view(registry_data: dict, models, logs_dir: Path):
 def main():
     st.title("🌊 Underwater Image Enhancement")
     st.caption("Upload an underwater image and run enhancement using a trained U-Net checkpoint.")
+
+    device_info = configure_tensorflow_device({})
+    st.info(
+        f"TensorFlow device: {device_info['device']} "
+        f"(GPUs: {device_info['gpu_count']}, mixed precision: {device_info['mixed_precision']})"
+    )
 
     try:
         runtime_cfg = load_runtime_config()
@@ -311,7 +402,7 @@ def main():
 
     tab_infer, tab_compare, tab_recommend = st.tabs(["Inference", "Run Comparison", "Best Run Recommender"])
     with tab_infer:
-        run_inference_view(model_choice=model_choice, img_size=img_size, registry_path=registry_path)
+        run_inference_view(model_choice=model_choice, img_size=img_size, registry_data=registry_data, logs_dir=logs_dir)
     with tab_compare:
         run_comparison_view(registry_data=registry_data, models=models, logs_dir=logs_dir)
     with tab_recommend:

@@ -15,8 +15,10 @@ import tensorflow as tf
 
 sys.path.append(str(Path(__file__).parent))
 
-from data_loader_simple import SimpleDataLoader
+from training.data_loader_simple import SimpleDataLoader
 from losses.simple_losses import SimpleLosses
+from utils.gpu import configure_tensorflow_device
+from utils.model_registry import ModelRegistry
 
 
 def find_latest_model():
@@ -69,13 +71,21 @@ def plot_finetuning_history(history, timestamp):
     plt.suptitle("Sharp Fine-tuning History", fontsize=14)
     plt.tight_layout()
     os.makedirs("results/training_plots", exist_ok=True)
-    plt.savefig(f"results/training_plots/sharp_finetuned_{timestamp}_history.png", dpi=150)
+    save_path = f"results/training_plots/sharp_finetuned_{timestamp}_history.png"
+    plt.savefig(save_path, dpi=150)
+    return save_path
 
 
 def resume_sharp_training(additional_epochs=20):
     print("=" * 60)
     print("RESUME TRAINING FOR SHARPER RESULTS")
     print("=" * 60)
+
+    device_info = configure_tensorflow_device({})
+    print(
+        f"\n🧠 TensorFlow device: {device_info['device']} "
+        f"(GPUs: {device_info['gpu_count']}, mixed_precision: {device_info['mixed_precision']})"
+    )
 
     model_path = find_latest_model()
     if not model_path:
@@ -171,7 +181,41 @@ def resume_sharp_training(additional_epochs=20):
     model.save(final_path)
     print(f"\n✅ Sharp model saved: {final_path}")
 
-    plot_finetuning_history(history, timestamp)
+    history_plot = plot_finetuning_history(history, timestamp)
+
+    run_name = f"sharp128_resume_{timestamp}"
+    config = {
+        "source_model": model_path,
+        "img_size": model_input_size,
+        "batch_size": 2,
+        "epochs": additional_epochs,
+        "learning_rate": 1e-5,
+        "loss_type": "sharp",
+        "registry_path": "results/model_registry.json",
+        "model_name": run_name,
+    }
+    metrics = {
+        "final_loss": float(history.history["loss"][-1]),
+        "final_mae": float(history.history.get("mae", [0])[-1]),
+        "final_val_loss": float(history.history.get("val_loss", [0])[-1]),
+        "final_val_mae": float(history.history.get("val_mae", [0])[-1]),
+        "epochs_ran": len(history.epoch),
+    }
+    artifacts = {
+        "best_checkpoint": f"models/checkpoints/sharp_finetuned_{timestamp}_best.h5",
+        "final_h5": final_path,
+        "history_plot": history_plot,
+        "csv_log": f"logs/csv/sharp_finetuned_{timestamp}.csv",
+    }
+    registry = ModelRegistry(config["registry_path"])
+    registry.register_training_run(
+        run_name=run_name,
+        config=config,
+        metrics=metrics,
+        artifacts=artifacts,
+    )
+    print(f"🗂️ Registered run metadata in {config['registry_path']}")
+
     return model, history
 
 

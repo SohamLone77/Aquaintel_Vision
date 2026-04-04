@@ -30,10 +30,7 @@ for dir_name in ['models/checkpoints', 'losses', 'training',
 # ---------------------------------------------------------------------------
 # Imports
 # ---------------------------------------------------------------------------
-try:
-    from models.basic_unet import build_basic_unet                      # noqa: E402
-except ModuleNotFoundError:
-    from basic_unet import build_basic_unet                             # noqa: E402
+from models.basic_unet import build_basic_unet                          # noqa: E402
 from losses.simple_losses import SimpleLosses                            # noqa: E402
 from losses.underwater_losses import (UnderwaterLosses,                  # noqa: E402
                                        CombinedUnderwaterLoss,
@@ -41,6 +38,7 @@ from losses.underwater_losses import (UnderwaterLosses,                  # noqa:
 from training.data_loader import UnderwaterDataLoader                    # noqa: E402
 from training.callbacks import create_all_callbacks, CustomCallback      # noqa: E402
 from utils.config_loader import ConfigError, load_runtime_config         # noqa: E402
+from utils.gpu import configure_tensorflow_device                        # noqa: E402
 from utils.model_registry import ModelRegistry                            # noqa: E402
 from scripts.validate_dataset import validate_dataset                     # noqa: E402
 
@@ -75,6 +73,12 @@ class UnderwaterTrainer:
         print("\n📋 Configuration:")
         for key, value in self.config.items():
             print(f"   {key}: {value}")
+
+        device_info = configure_tensorflow_device(self.config)
+        print(
+            f"\n🧠 TensorFlow device: {device_info['device']} "
+            f"(GPUs: {device_info['gpu_count']}, mixed_precision: {device_info['mixed_precision']})"
+        )
         
         # Initialize data loader
         self.setup_data()
