@@ -14,6 +14,22 @@ from train_complete import UnderwaterTrainer  # noqa: E402
 from utils.config_loader import ConfigError, load_runtime_config  # noqa: E402
 
 
+def run_training_pipeline(runtime_config, resume_checkpoint=None):
+    """Run the full training/evaluation/prediction pipeline."""
+    trainer = UnderwaterTrainer(runtime_config)
+
+    if resume_checkpoint:
+        checkpoint_path = Path(resume_checkpoint)
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+        trainer.model.load_weights(str(checkpoint_path))
+
+    history = trainer.train()
+    trainer.evaluate()
+    trainer.predict_sample()
+    return trainer, history
+
+
 def main(config=None):
     """
     Launch training with optional config overrides.
@@ -27,10 +43,7 @@ def main(config=None):
     except ConfigError as exc:
         raise SystemExit(f"Configuration error: {exc}") from exc
 
-    trainer = UnderwaterTrainer(runtime_config)
-    trainer.train()
-    trainer.evaluate()
-    trainer.predict_sample()
+    run_training_pipeline(runtime_config)
 
     print("\n" + "=" * 60)
     print("TRAINING PIPELINE COMPLETE!")

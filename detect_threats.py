@@ -308,14 +308,22 @@ def main() -> None:
     if args.mode == "image":
         if not args.input:
             raise ValueError("--input is required for image mode")
-        output = args.output or args.input.replace(".", "_detected.")
+        if args.output:
+            output = args.output
+        else:
+            input_path = Path(args.input)
+            output = str(input_path.with_name(f"{input_path.stem}_detected{input_path.suffix}"))
         detector.process_image(args.input, output)
         return
 
     if args.mode == "video":
         if not args.input:
             raise ValueError("--input is required for video mode")
-        output = args.output or args.input.replace(".", "_detected.")
+        if args.output:
+            output = args.output
+        else:
+            input_path = Path(args.input)
+            output = str(input_path.with_name(f"{input_path.stem}_detected{input_path.suffix}"))
         detector.process_video(args.input, output)
         return
 

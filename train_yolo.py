@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -12,13 +13,26 @@ import torch
 import yaml
 from ultralytics import YOLO
 
+try:
+    from experiment_tracker import ExperimentTracker
+except Exception:
+    ExperimentTracker = None
+
 
 class UnderwaterYOLOTrainer:
     """Fine-tune YOLO on an underwater threat dataset."""
 
-    def __init__(self, dataset_yaml: str = "underwater_dataset/dataset.yaml", model_name: str = "yolov8n.pt"):
+    def __init__(
+        self,
+        dataset_yaml: str = "underwater_dataset/dataset.yaml",
+        model_name: str = "yolov8n.pt",
+        run_name: str = "underwater_threat_detector",
+        project_dir: str = "runs",
+    ):
         self.dataset_yaml = Path(dataset_yaml)
         self.model_name = model_name
+        self.run_name = run_name
+        self.project_dir = project_dir
         self.device = 0 if torch.cuda.is_available() else "cpu"
 
         if not self.dataset_yaml.exists():
@@ -50,8 +64,8 @@ class UnderwaterYOLOTrainer:
             "save_period": 10,
             "val": True,
             "verbose": True,
-            "name": "underwater_threat_detector",
-            "project": "runs",
+            "name": self.run_name,
+            "project": self.project_dir,
             "exist_ok": True,
             "pretrained": True,
             "optimizer": "AdamW",
@@ -110,6 +124,22 @@ class UnderwaterYOLOTrainer:
             self.plot_training_curves(df, out_dir / "training_curves.png")
             print(f"Saved metrics: {out_dir / 'training_metrics.csv'}")
             print(f"Saved curves:  {out_dir / 'training_curves.png'}")
+
+        self.write_manifest(results=results)
+
+    def write_manifest(self, results=None) -> None:
+        run_dir = self._find_latest_run_dir(results=results)
+        if run_dir is None:
+            return
+
+        manifest = {
+            "run_dir": str(run_dir).replace("\\", "/"),
+            "dataset_yaml": str(self.dataset_yaml).replace("\\", "/"),
+            "best_model": str((run_dir / "weights" / "best.pt").resolve()).replace("\\", "/") if (run_dir / "weights" / "best.pt").exists() else None,
+            "classes": self.dataset_info.get("names", []),
+        }
+        out_path = run_dir / "manifest.json"
+        out_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     def plot_training_curves(self, df: pd.DataFrame, save_path: Path) -> None:
         fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -180,6 +210,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--imgsz", type=int, default=640, help="Image size")
     parser.add_argument("--patience", type=int, default=20, help="Early stopping patience")
     parser.add_argument("--model", type=str, default="yolov8n.pt", help="Base YOLO model")
+    parser.add_argument("--run-name", type=str, default="underwater_threat_detector", help="Run name under project directory")
+    parser.add_argument("--project", type=str, default="runs", help="Parent output directory for YOLO runs")
     parser.add_argument("--data", type=str, default="underwater_dataset/dataset.yaml", help="Dataset yaml path")
     parser.add_argument("--validate", action="store_true", help="Run validation only")
     parser.add_argument("--export", type=str, default=None, help="Export format: onnx/tflite/torchscript")
@@ -188,7 +220,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    trainer = UnderwaterYOLOTrainer(dataset_yaml=args.data, model_name=args.model)
+    trainer = UnderwaterYOLOTrainer(
+        dataset_yaml=args.data,
+        model_name=args.model,
+        run_name=args.run_name,
+        project_dir=args.project,
+    )
 
     if args.validate:
         trainer.validate_model()
@@ -199,7 +236,26 @@ def main() -> None:
         return
 
     trainer.train(epochs=args.epochs, imgsz=args.imgsz, batch=args.batch, patience=args.patience)
-    trainer.validate_model()
+    val_results = trainer.validate_model()
+
+    if ExperimentTracker is not None and val_results is not None:
+        try:
+            best_model = trainer._find_best_model_path()
+            tracker = ExperimentTracker()
+            tracker.register_yolo_experiment(
+                run_id=(best_model.parent.parent.name if best_model is not None else "underwater_threat_detector"),
+                metrics={
+                    "mAP50": float(val_results.box.map50),
+                    "precision": float(val_results.box.mp),
+                    "recall": float(val_results.box.mr),
+                },
+                model_path=str(best_model) if best_model is not None else "",
+                is_promoted=False,
+            )
+            print("Experiment tracker updated for YOLO run")
+        except Exception as exc:
+            print(f"Experiment tracker update skipped: {exc}")
+
     trainer.export_model(fmt="onnx")
 
 
