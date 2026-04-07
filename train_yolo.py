@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -19,6 +20,77 @@ except Exception:
     ExperimentTracker = None
 
 
+def detect_placeholder_labels(dataset_yaml: Path) -> tuple[bool, dict]:
+    """Detect synthetic placeholder labels (single class + near-identical bbox geometry)."""
+    with dataset_yaml.open("r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+
+    base = Path(cfg.get("path", dataset_yaml.parent))
+    if not base.is_absolute():
+        base = (dataset_yaml.parent / base).resolve()
+
+    class_counter = Counter()
+    widths = []
+    heights = []
+    x_centers = []
+    y_centers = []
+    total_instances = 0
+
+    for split in ("train", "val"):
+        split_rel = cfg.get(split)
+        if not split_rel:
+            continue
+
+        labels_dir = base / str(split_rel).replace("images", "labels")
+        if not labels_dir.exists():
+            continue
+
+        for label_file in labels_dir.glob("*.txt"):
+            for line in label_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+                parts = line.strip().split()
+                if len(parts) != 5:
+                    continue
+
+                class_counter[int(float(parts[0]))] += 1
+                x_centers.append(float(parts[1]))
+                y_centers.append(float(parts[2]))
+                widths.append(float(parts[3]))
+                heights.append(float(parts[4]))
+                total_instances += 1
+
+    if total_instances == 0:
+        return False, {
+            "total_instances": 0,
+            "class_dist": {},
+            "reason": "no_labels_found",
+        }
+
+    def _is_near_constant(values, eps=1e-6):
+        return (max(values) - min(values)) <= eps if values else False
+
+    placeholder_like = (
+        len(class_counter) == 1
+        and _is_near_constant(widths)
+        and _is_near_constant(heights)
+        and _is_near_constant(x_centers)
+        and _is_near_constant(y_centers)
+    )
+
+    diagnostics = {
+        "total_instances": total_instances,
+        "class_dist": dict(class_counter),
+        "width_min": min(widths),
+        "width_max": max(widths),
+        "height_min": min(heights),
+        "height_max": max(heights),
+        "x_center_min": min(x_centers),
+        "x_center_max": max(x_centers),
+        "y_center_min": min(y_centers),
+        "y_center_max": max(y_centers),
+    }
+    return placeholder_like, diagnostics
+
+
 class UnderwaterYOLOTrainer:
     """Fine-tune YOLO on an underwater threat dataset."""
 
@@ -28,15 +100,25 @@ class UnderwaterYOLOTrainer:
         model_name: str = "yolov8n.pt",
         run_name: str = "underwater_threat_detector",
         project_dir: str = "runs",
+        allow_placeholder_labels: bool = False,
     ):
         self.dataset_yaml = Path(dataset_yaml)
         self.model_name = model_name
         self.run_name = run_name
         self.project_dir = project_dir
+        self.allow_placeholder_labels = bool(allow_placeholder_labels)
         self.device = 0 if torch.cuda.is_available() else "cpu"
 
         if not self.dataset_yaml.exists():
             raise FileNotFoundError(f"Dataset config not found: {self.dataset_yaml}")
+
+        placeholder_like, diagnostics = detect_placeholder_labels(self.dataset_yaml)
+        if placeholder_like and not self.allow_placeholder_labels:
+            raise ValueError(
+                "Detected placeholder YOLO labels (single class and near-identical centered boxes). "
+                "Replace with real annotations or pass allow_placeholder_labels=True / --allow-placeholder-labels. "
+                f"Diagnostics: {diagnostics}"
+            )
 
         with self.dataset_yaml.open("r", encoding="utf-8") as f:
             self.dataset_info = yaml.safe_load(f)
@@ -93,10 +175,14 @@ class UnderwaterYOLOTrainer:
             except Exception:
                 pass
 
-        candidates = sorted(Path("runs").glob("**/underwater_threat_detector"), key=lambda p: p.stat().st_mtime, reverse=True)
-        for c in candidates:
-            if c.is_dir():
-                return c
+        candidates = sorted(
+            Path(self.project_dir).glob(f"**/{self.run_name}"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for candidate in candidates:
+            if candidate.is_dir():
+                return candidate
         return None
 
     def _find_best_model_path(self, results=None) -> Path | None:
@@ -132,10 +218,11 @@ class UnderwaterYOLOTrainer:
         if run_dir is None:
             return
 
+        best = run_dir / "weights" / "best.pt"
         manifest = {
             "run_dir": str(run_dir).replace("\\", "/"),
             "dataset_yaml": str(self.dataset_yaml).replace("\\", "/"),
-            "best_model": str((run_dir / "weights" / "best.pt").resolve()).replace("\\", "/") if (run_dir / "weights" / "best.pt").exists() else None,
+            "best_model": str(best.resolve()).replace("\\", "/") if best.exists() else None,
             "classes": self.dataset_info.get("names", []),
         }
         out_path = run_dir / "manifest.json"
@@ -213,6 +300,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-name", type=str, default="underwater_threat_detector", help="Run name under project directory")
     parser.add_argument("--project", type=str, default="runs", help="Parent output directory for YOLO runs")
     parser.add_argument("--data", type=str, default="underwater_dataset/dataset.yaml", help="Dataset yaml path")
+    parser.add_argument(
+        "--allow-placeholder-labels",
+        action="store_true",
+        help="Allow training on synthetic/placeholder labels (not recommended).",
+    )
     parser.add_argument("--validate", action="store_true", help="Run validation only")
     parser.add_argument("--export", type=str, default=None, help="Export format: onnx/tflite/torchscript")
     return parser
@@ -225,6 +317,7 @@ def main() -> None:
         model_name=args.model,
         run_name=args.run_name,
         project_dir=args.project,
+        allow_placeholder_labels=args.allow_placeholder_labels,
     )
 
     if args.validate:

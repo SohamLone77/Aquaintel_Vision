@@ -12,6 +12,11 @@ from pathlib import Path
 from sklearn.model_selection import train_test_split
 import yaml
 
+try:
+    from dataset_integrity import DatasetIntegrityChecker
+except Exception:
+    DatasetIntegrityChecker = None
+
 
 class UnderwaterDatasetPreparer:
     """Prepare underwater dataset for YOLO fine-tuning."""
@@ -140,7 +145,7 @@ class UnderwaterDatasetPreparer:
         out.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         return out
 
-    def prepare(self) -> Path:
+    def prepare(self, run_integrity_check: bool = False) -> Path:
         print("=" * 60)
         print("UNDERWATER DATASET PREPARER")
         print("=" * 60)
@@ -156,6 +161,15 @@ class UnderwaterDatasetPreparer:
         print(f"Guide: {guide_path}")
         print(f"Summary: {summary_path}")
         print("Next: replace dummy labels and run train_yolo.py")
+
+        if run_integrity_check:
+            if DatasetIntegrityChecker is None:
+                print("Integrity checker unavailable; skipping integrity validation.")
+            else:
+                checker = DatasetIntegrityChecker(dataset_path=str(self.output_dir), backup=False)
+                train_ok = checker.validate_all(split="train")
+                val_ok = checker.validate_all(split="val")
+                print(f"Integrity check -> train: {train_ok}, val: {val_ok}")
         return yaml_path
 
 
@@ -164,13 +178,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-dir", type=str, default="data/sample", help="Input source directory")
     parser.add_argument("--output-dir", type=str, default="underwater_dataset", help="Output dataset directory")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--integrity-check", action="store_true", help="Run dataset integrity validation after preparation")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
     preparer = UnderwaterDatasetPreparer(source_dir=args.source_dir, output_dir=args.output_dir, seed=args.seed)
-    preparer.prepare()
+    preparer.prepare(run_integrity_check=args.integrity_check)
 
 
 if __name__ == "__main__":

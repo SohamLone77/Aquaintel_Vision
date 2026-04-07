@@ -36,11 +36,20 @@ from losses.underwater_losses import (UnderwaterLosses,                  # noqa:
                                        CombinedUnderwaterLoss,
                                        create_loss_function)
 from training.data_loader import UnderwaterDataLoader                    # noqa: E402
+try:
+    from data_loader_deterministic import DeterministicDataLoader
+except Exception:
+    DeterministicDataLoader = None
 from training.callbacks import create_all_callbacks, CustomCallback      # noqa: E402
 from utils.config_loader import ConfigError, load_runtime_config         # noqa: E402
 from utils.gpu import configure_tensorflow_device                        # noqa: E402
 from utils.model_registry import ModelRegistry                            # noqa: E402
 from scripts.validate_dataset import validate_dataset                     # noqa: E402
+
+try:
+    from experiment_tracker import ExperimentTracker
+except Exception:
+    ExperimentTracker = None
 
 import matplotlib
 matplotlib.use('Agg')  # non-interactive backend for headless environments
@@ -100,17 +109,30 @@ class UnderwaterTrainer:
                 f"Dataset validation failed for {self.config['data_path']}:\n - {issues}"
             )
         
-        self.loader = UnderwaterDataLoader(
-            data_path=self.config['data_path'],
-            img_size=self.config['img_size'],
-            batch_size=self.config['batch_size'],
-            validation_split=self.config['validation_split'],
-            augment=self.config.get('augment_enabled', True),
-            augmentation_config={
-                'profile': self.config.get('augmentation_profile', 'standard'),
-                **self.config.get('augmentation', {}),
-            }
-        )
+        use_deterministic_loader = bool(self.config.get('deterministic_mode', False))
+        if use_deterministic_loader and DeterministicDataLoader is not None:
+            self.loader = DeterministicDataLoader(
+                data_path=self.config['data_path'],
+                img_size=self.config['img_size'],
+                batch_size=self.config['batch_size'],
+                validation_split=self.config['validation_split'],
+                deterministic=True,
+                seed=int(self.config.get('seed', 42)),
+                preserve_aspect_ratio=bool(self.config.get('preserve_aspect_ratio', False)),
+            )
+            print("✅ Using DeterministicDataLoader")
+        else:
+            self.loader = UnderwaterDataLoader(
+                data_path=self.config['data_path'],
+                img_size=self.config['img_size'],
+                batch_size=self.config['batch_size'],
+                validation_split=self.config['validation_split'],
+                augment=self.config.get('augment_enabled', True),
+                augmentation_config={
+                    'profile': self.config.get('augmentation_profile', 'standard'),
+                    **self.config.get('augmentation', {}),
+                }
+            )
         
         self.train_dataset = self.loader.get_dataset('train')
         self.val_dataset = self.loader.get_dataset('validation')
@@ -321,6 +343,23 @@ class UnderwaterTrainer:
             metrics=metrics,
             artifacts=artifacts,
         )
+
+        if ExperimentTracker is not None:
+            try:
+                tracker = ExperimentTracker()
+                tracker.register_unet_experiment(
+                    run_id=self.config['model_name'],
+                    metrics={
+                        'val_loss': float(metrics['final_val_loss']) if metrics['final_val_loss'] is not None else None,
+                        'val_mae': float(metrics['final_val_mae']) if metrics['final_val_mae'] is not None else None,
+                        'ssim': None,
+                    },
+                    model_path=final_keras,
+                    is_promoted=False,
+                )
+                print("🧪 Experiment tracker updated for U-Net run")
+            except Exception as exc:
+                print(f"⚠️ Experiment tracker update failed: {exc}")
     
     def plot_history(self):
         """Plot training history"""

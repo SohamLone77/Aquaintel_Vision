@@ -526,5 +526,99 @@
       "history_plot": "results/training_plots/sharp_finetuned_20260404_1054_history.png",
       "csv_log": "logs/csv/sharp_finetuned_20260404_1054.csv"
     }
+  },
+  "unet256_20260404_run1": {
+    "timestamp": "2026-04-04T15:09:21",
+    "config": {
+      "data_path": "data",
+      "img_size": 256,
+      "validation_split": 0.2,
+      "batch_size": 2,
+      "epochs": 30,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.5,
+      "augment_enabled": true,
+      "augmentation_profile": "light",
+      "augmentation": {
+        "flip_prob": 0.3,
+        "vertical_flip_prob": 0.2,
+        "rotate_prob": 0.5,
+        "brightness_prob": 0.3,
+        "brightness_delta": 0.05,
+        "contrast_prob": 0.3,
+        "contrast_lower": 0.9,
+        "contrast_upper": 1.1
+      },
+      "model_name": "unet256_20260404_run1",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.06922345608472824,
+      "final_mae": 0.08393450081348419,
+      "final_val_loss": 0.10799023509025574,
+      "final_val_mae": 0.10881301015615463,
+      "epochs_ran": 24
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet256_20260404_run1_best.h5",
+      "final_h5": "models/checkpoints\\unet256_20260404_run1_final.h5",
+      "final_keras": "models/checkpoints\\unet256_20260404_run1_final.keras",
+      "history_plot": "results\\training_plots\\unet256_20260404_run1_history.png",
+      "sample_plot": "results\\training_plots\\unet256_20260404_run1_samples.png"
+    }
+  },
+  "unet256_20260405_0655_final": {
+    "timestamp": "2026-04-05T08:05:13",
+    "config": {
+      "data_path": "data",
+      "img_size": 256,
+      "validation_split": 0.2,
+      "batch_size": 2,
+      "epochs": 50,
+      "learning_rate": 0.0001,
+      "early_stopping_patience": 10,
+      "reduce_lr_patience": 5,
+      "loss_type": "combined",
+      "ssim_weight": 0.5,
+      "augment_enabled": true,
+      "augmentation_profile": "light",
+      "augmentation": {
+        "flip_prob": 0.3,
+        "vertical_flip_prob": 0.2,
+        "rotate_prob": 0.5,
+        "brightness_prob": 0.3,
+        "brightness_delta": 0.05,
+        "contrast_prob": 0.3,
+        "contrast_lower": 0.9,
+        "contrast_upper": 1.1
+      },
+      "model_name": "unet256_20260405_0655_final",
+      "checkpoint_dir": "models/checkpoints",
+      "results_dir": "results",
+      "registry_path": "results/model_registry.json",
+      "use_tensorboard": true,
+      "use_csv_logger": true
+    },
+    "metrics": {
+      "final_loss": 0.07043729722499847,
+      "final_mae": 0.08414813131093979,
+      "final_val_loss": 0.11172859370708466,
+      "final_val_mae": 0.10843391716480255,
+      "epochs_ran": 22
+    },
+    "artifacts": {
+      "best_checkpoint": "models/checkpoints\\unet256_20260405_0655_final_best.h5",
+      "final_h5": "models/checkpoints\\unet256_20260405_0655_final_final.h5",
+      "final_keras": "models/checkpoints\\unet256_20260405_0655_final_final.keras",
+      "history_plot": "results\\training_plots\\unet256_20260405_0655_final_history.png",
+      "sample_plot": "results\\training_plots\\unet256_20260405_0655_final_samples.png"
+    }
   }
 }
