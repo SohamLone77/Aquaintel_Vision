@@ -1,0 +1,18 @@
+# Ignore local environment files and logs
+.venv*/
+.env
+__pycache__/
+*.pyc
+
+# Ignore model checkpoints, downloaded datasets, and experiment tracking
+data/
+models/
+runs/
+results/
+logs/
+.pytest_cache/
+
+# Artifact tracking and ide folders
+.gemini/
+.vscode/
+.idea/

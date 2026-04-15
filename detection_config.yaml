@@ -1,0 +1,43 @@
+# Optimal settings based on current in-repo evaluation
+
+model:
+  yolo_path: "runs/detect/runs/yolo/underwater_run5_20260413/weights/best.pt"
+  enhancement_path: null
+
+detection:
+  confidence: 0.30
+  iou: 0.45
+  enable_enhancement: false
+  use_pretrained: false
+  stage1_confidence: 0.15
+  stage2_confidence: 0.60
+  temporal_frames: 5
+  min_consistent_frames: 3
+  alert_cooldown: 5
+
+class_thresholds:
+  diver: 0.30
+  suspicious_object: 0.25
+  boat: 0.35
+  ship: 0.35
+  submarine: 0.25
+  obstacle: 0.35
+  marine_life: 0.40
+  swimmer: 0.25
+  underwater_vehicle: 0.25
+
+stage2_thresholds:
+  diver: 0.55
+  suspicious_object: 0.50
+  boat: 0.65
+  ship: 0.60
+  submarine: 0.50
+  pipeline: 0.70
+  obstacle: 0.65
+  marine_life: 0.75
+  swimmer: 0.60
+  underwater_vehicle: 0.55
+
+output:
+  output_dir: "results/detections"
+  report_path: "results/detection_report.json"

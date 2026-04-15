@@ -2,16 +2,18 @@
 Enhanced Underwater Data Loader with more features
 """
 
-import tensorflow as tf
-import numpy as np
+import math
+import glob
 import os
+import random
+
 import cv2
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
 from sklearn.model_selection import train_test_split
-import glob
-import random
 
 class UnderwaterDataLoader:
     def __init__(self, data_path="data", img_size=128, batch_size=8,
@@ -187,7 +189,7 @@ class UnderwaterDataLoader:
                 self.train_indices, self.val_indices = train_test_split(
                     indices, test_size=self.validation_split, random_state=42
                 )
-            except:
+            except Exception:
                 # Fallback if train_test_split fails
                 split = int(n_samples * (1 - self.validation_split))
                 self.train_indices = indices[:split]
@@ -318,13 +320,11 @@ class UnderwaterDataLoader:
     @property
     def train_steps(self):
         """Number of batches per training epoch"""
-        import math
         return math.ceil(len(self.train_indices) / self.batch_size)
-    
+
     @property
     def val_steps(self):
         """Number of batches per validation epoch"""
-        import math
         if len(self.val_indices) == 0:
             return 0
         return math.ceil(len(self.val_indices) / self.batch_size)
@@ -394,7 +394,7 @@ class UnderwaterDataLoader:
                     raw, ref = self.load_pair(i)
                     sample_raw.append(raw)
                     sample_ref.append(ref)
-                except:
+                except Exception:
                     continue
             
             if sample_raw:

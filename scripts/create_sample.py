@@ -25,4 +25,6 @@ def create_sample_dataset(sample_size=50):
     
     print(f"Created sample dataset with {sample_size} images")
 
-create_sample_dataset(50)
+
+if __name__ == "__main__":
+    create_sample_dataset(50)

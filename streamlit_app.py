@@ -12,7 +12,7 @@ import streamlit as st
 import tensorflow as tf
 from PIL import Image
 
-from detect_threats import UnderwaterThreatDetector
+from production_detector import UnderwaterThreatDetector as ProductionThreatDetector
 from utils.config_loader import load_runtime_config
 from utils.gpu import configure_tensorflow_device
 
@@ -169,7 +169,7 @@ def make_web_preview_video(source_path: Path):
 
 def list_yolo_model_files():
     candidates = sorted(
-        Path("runs").glob("**/underwater_threat_detector/weights/best.pt"),
+        Path("runs").glob("**/weights/best.pt"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
@@ -177,14 +177,45 @@ def list_yolo_model_files():
     return ["yolov8n.pt"] + [str(p).replace("\\", "/") for p in candidates]
 
 
+class StreamlitThreatDetectorAdapter:
+    """Keep Streamlit view code stable while using the production detector API."""
+
+    def __init__(self, detector: ProductionThreatDetector):
+        self.detector = detector
+
+    def detect_threats(self, image_bgr: np.ndarray):
+        detections, annotated_bgr, _ = self.detector.detect(image_bgr)
+
+        normalized = []
+        for det in detections:
+            normalized.append(
+                {
+                    "class": det.get("class_name", "unknown"),
+                    "confidence": float(det.get("confidence", 0.0)),
+                    "threat_level": det.get("threat_level", "UNKNOWN"),
+                    "bbox": det.get("bbox", []),
+                    "timestamp": det.get("timestamp", ""),
+                }
+            )
+
+        return normalized, annotated_bgr
+
+
 @st.cache_resource
-def load_threat_detector(enhancement_model_path: str, yolo_model_path: str, confidence_threshold: float):
-    return UnderwaterThreatDetector(
+def load_threat_detector(
+    enhancement_model_path: str,
+    yolo_model_path: str,
+    confidence_threshold: float,
+    use_enhancement: bool,
+):
+    detector = ProductionThreatDetector(
         enhancement_model_path=enhancement_model_path,
         yolo_model_path=yolo_model_path,
         confidence_threshold=confidence_threshold,
-        enhance_size=0,
+        iou_threshold=0.45,
+        enable_enhancement=use_enhancement,
     )
+    return StreamlitThreatDetectorAdapter(detector)
 
 
 def get_run_name_from_model_path(model_path: Path):
@@ -331,6 +362,19 @@ def run_inference_view(model_choice: Path, img_size: int, registry_data: dict, l
 
     uploaded_file = st.file_uploader("Upload image", type=["jpg", "jpeg", "png", "bmp"])
 
+    if uploaded_file is not None:
+        if uploaded_file.size > 20 * 1024 * 1024:
+            st.error("Image file is too large (max 20MB limit).")
+            return
+        
+        import imghdr
+        header = uploaded_file.read(512)
+        uploaded_file.seek(0)
+        mime = imghdr.what(None, h=header)
+        if not mime or mime not in ['jpeg', 'png', 'bmp']:
+            st.error(f"Invalid image format detected. Expected jpg/png/bmp but got {mime}.")
+            return
+
     if uploaded_file is None:
         st.info("Select a model and upload an image to start inference.")
         st.markdown("### Model Metadata")
@@ -374,10 +418,13 @@ def run_inference_view(model_choice: Path, img_size: int, registry_data: dict, l
             st.markdown("### Enhanced")
             st.image(enhanced, width="stretch")
 
+        import re
+        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', Path(uploaded_file.name).stem)
+
         st.download_button(
             label="Download enhanced PNG",
             data=image_to_download_bytes(enhanced),
-            file_name=f"enhanced_{Path(uploaded_file.name).stem}.png",
+            file_name=f"enhanced_{safe_name}.png",
             mime="image/png",
         )
 
@@ -448,6 +495,20 @@ def run_video_view(model_choice: Path, img_size: int):
         type=["mp4", "avi", "mov", "mkv"],
         key="video_uploader",
     )
+
+    if uploaded_video is not None:
+        if uploaded_video.size > 200 * 1024 * 1024:
+            st.error("Video file is too large (max 200MB limit).")
+            return
+            
+        header = uploaded_video.read(16)
+        uploaded_video.seek(0)
+        is_mp4 = b'ftyp' in header
+        is_mkv = b'\x1aE\xdf\xa3' in header
+        is_avi = b'RIFF' in header
+        # mov is typically ftyp as well or mdat
+        if not (is_mp4 or is_mkv or is_avi or b'mdat' in header):
+            st.warning("Video signature may be invalid or unsupported. Proceeding with caution.")
 
     if uploaded_video is None:
         st.info("Upload a video file to start processing.")
@@ -560,14 +621,41 @@ def run_video_view(model_choice: Path, img_size: int):
 
 
 def run_threat_detection_view(model_choice: Path):
-    st.markdown("### Threat Detection (Enhancement + YOLO)")
-    st.caption("Run underwater threat detection on image or video with the selected enhancement model.")
+    st.markdown("### Threat Detection (YOLO, Enhancement Optional)")
+    st.caption("Run underwater threat detection on image or video. Enhancement is optional and OFF by default.")
 
     yolo_options = list_yolo_model_files()
     yolo_choice = st.selectbox("YOLO model", options=yolo_options, index=0, key="threat_yolo_model")
-    conf = st.slider("Confidence threshold", min_value=0.05, max_value=0.95, value=0.50, step=0.05, key="threat_conf")
 
-    detector = load_threat_detector(str(model_choice), yolo_choice, float(conf))
+    profiles = {
+        "Recall": {"conf": 0.10, "enhance": False},
+        "Balanced": {"conf": 0.20, "enhance": False},
+        "Strict (Recommended)": {"conf": 0.30, "enhance": False},
+        "Enhancement Fallback": {"conf": 0.20, "enhance": True},
+    }
+
+    if "threat_conf" not in st.session_state:
+        st.session_state["threat_conf"] = profiles["Strict (Recommended)"]["conf"]
+    if "threat_use_enhancement" not in st.session_state:
+        st.session_state["threat_use_enhancement"] = profiles["Strict (Recommended)"]["enhance"]
+
+    profile_name = st.selectbox(
+        "Detection profile",
+        options=list(profiles.keys()),
+        index=2,
+        key="threat_profile",
+        help="Profiles prefill confidence and enhancement settings based on validation sweeps.",
+    )
+
+    if st.session_state.get("threat_profile_applied") != profile_name:
+        st.session_state["threat_conf"] = profiles[profile_name]["conf"]
+        st.session_state["threat_use_enhancement"] = profiles[profile_name]["enhance"]
+        st.session_state["threat_profile_applied"] = profile_name
+
+    conf = st.slider("Confidence threshold", min_value=0.05, max_value=0.95, step=0.05, key="threat_conf")
+    use_enhancement = st.checkbox("Apply enhancement before YOLO", key="threat_use_enhancement")
+
+    detector = load_threat_detector(str(model_choice), yolo_choice, float(conf), bool(use_enhancement))
     mode = st.radio("Threat mode", options=["Image", "Video"], horizontal=True, key="threat_mode")
 
     if mode == "Image":
@@ -826,6 +914,10 @@ def run_recommender_view(registry_data: dict, models, logs_dir: Path):
 
 
 def main():
+    if "health" in st.query_params:
+        st.write('{"status": "ok"}')
+        st.stop()
+
     st.title("🌊 Underwater Image Enhancement")
     st.caption("Upload an underwater image and run enhancement using a trained U-Net checkpoint.")
 

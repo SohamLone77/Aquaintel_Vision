@@ -1,7 +1,11 @@
 data:
   path: data
   img_size: 128
+  # img_size: 256  # Next experiment: uncomment to test 256x256 resolution.
+  #                # Monitor GPU memory; set batch_size to 4 if OOM at 8.
   validation_split: 0.2
+  seed: 42              # RNG seed used by deterministic data loader split
+  deterministic_mode: false  # Set true to use DeterministicDataLoader
 
 training:
   batch_size: 8

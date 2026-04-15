@@ -1,4 +1,4 @@
-﻿"""Repository smoke tests for core modules and scripts."""
+"""Repository smoke tests for core modules and scripts."""
 
 from __future__ import annotations
 
@@ -79,6 +79,45 @@ class TestFilesystem(unittest.TestCase):
         for d in required_dirs:
             os.makedirs(d, exist_ok=True)
             self.assertTrue(os.path.isdir(d))
+
+
+class TestConfig(unittest.TestCase):
+    def test_load_config_valid(self):
+        from utils.config_loader import load_runtime_config
+        # It should load the project default config.yaml without error
+        cfg = load_runtime_config()
+        self.assertIn("img_size", cfg)
+        self.assertIn("learning_rate", cfg)
+        self.assertIn("batch_size", cfg)
+
+
+class TestRegistry(unittest.TestCase):
+    def test_roundtrip(self):
+        import tempfile
+        from utils.model_registry import ModelRegistry
+        with tempfile.TemporaryDirectory() as tmp:
+            rp = os.path.join(tmp, "reg.json")
+            reg = ModelRegistry(rp)
+            reg.register_training_run("dummy_run", {"epochs": 1}, {"loss": 0.5}, {})
+            
+            # Re-read
+            reg2 = ModelRegistry(rp)
+            self.assertIn("dummy_run", reg2.records)
+            self.assertEqual(reg2.records["dummy_run"]["metrics"]["loss"], 0.5)
+
+
+class TestDataPipeline(unittest.TestCase):
+    @unittest.skipUnless(_has_module("tensorflow"), "Missing TF")
+    def test_overlapping_indices(self):
+        from training.data_loader import UnderwaterDataLoader
+        # Assuming there is a data folder or we just test the split
+        if not os.path.exists("data"):
+            self.skipTest("No data folder found to test dataloader")
+            
+        loader = UnderwaterDataLoader(data_path="data", img_size=128, batch_size=2, validation_split=0.2)
+        # Check that there is no overlap in train/val
+        overlap = set(loader.train_indices) & set(loader.val_indices)
+        self.assertEqual(len(overlap), 0, "Train and Val indices overlap!")
 
 
 if __name__ == "__main__":

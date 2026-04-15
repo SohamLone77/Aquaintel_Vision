@@ -1,0 +1,10 @@
+diver
+suspicious_object
+boat
+ship
+submarine
+pipeline
+obstacle
+marine_life
+swimmer
+underwater_vehicle

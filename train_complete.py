@@ -17,18 +17,8 @@ _PROJECT_ROOT = str(Path(__file__).resolve().parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-print("=" * 60)
-print("UNDERWATER IMAGE ENHANCEMENT - TRAINING")
-print("=" * 60)
-
-# Ensure required directories exist
-for dir_name in ['models/checkpoints', 'losses', 'training',
-                 'logs', 'logs/csv',
-                 'results/training_plots']:
-    os.makedirs(dir_name, exist_ok=True)
-
 # ---------------------------------------------------------------------------
-# Imports
+# Project-internal imports (placed after sys.path is configured above)
 # ---------------------------------------------------------------------------
 from models.basic_unet import build_basic_unet                          # noqa: E402
 from losses.simple_losses import SimpleLosses                            # noqa: E402
@@ -58,6 +48,7 @@ from datetime import datetime                                            # noqa:
 
 print("✅ All modules imported successfully")
 
+
 class UnderwaterTrainer:
     """
     Trainer class for underwater image enhancement
@@ -70,6 +61,15 @@ class UnderwaterTrainer:
         Args:
             config: Dictionary with training parameters
         """
+        print("=" * 60)
+        print("UNDERWATER IMAGE ENHANCEMENT - TRAINING")
+        print("=" * 60)
+
+        # Ensure required directories exist
+        for dir_name in ['models/checkpoints', 'losses', 'training',
+                         'logs', 'logs/csv', 'results/training_plots']:
+            os.makedirs(dir_name, exist_ok=True)
+
         if config is None:
             self.config = load_runtime_config()
         else:
@@ -172,9 +172,17 @@ class UnderwaterTrainer:
         # Configure and compile model loss
         loss_type = str(self.config.get('loss_type', 'combined')).lower()
         if loss_type == 'combined':
-            SimpleLosses.combined_alpha = float(self.config.get('ssim_weight', 0.5))
-            selected_loss = SimpleLosses.combined_loss
-            print(f"🔧 Loss: combined (ssim_weight={SimpleLosses.combined_alpha})")
+            ssim_weight = float(self.config.get('ssim_weight', 0.5))
+            # Use a closure to capture ssim_weight locally — avoids mutating the
+            # shared SimpleLosses class attribute which would affect any other
+            # trainer instance running in the same process.
+            def _combined_loss(y_true, y_pred, _w=ssim_weight):
+                # tf is already imported at module level
+                ssim = 1.0 - tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=1.0))
+                mse = tf.reduce_mean(tf.square(y_true - y_pred))
+                return _w * ssim + (1.0 - _w) * mse
+            selected_loss = _combined_loss
+            print(f"🔧 Loss: combined (ssim_weight={ssim_weight})")
         elif loss_type == 'mse':
             selected_loss = SimpleLosses.mse_loss
             print("🔧 Loss: mse")
@@ -187,11 +195,17 @@ class UnderwaterTrainer:
         else:
             raise ValueError(f"Unsupported loss_type: {loss_type}")
 
+        def psnr(y_true, y_pred):
+            return tf.reduce_mean(tf.image.psnr(y_true, y_pred, max_val=1.0))
+            
+        def ssim(y_true, y_pred):
+            return tf.reduce_mean(tf.image.ssim(y_true, y_pred, max_val=1.0))
+
         # Compile model
         self.model.compile(
             optimizer=tf.keras.optimizers.Adam(learning_rate=self.config['learning_rate']),
             loss=selected_loss,
-            metrics=['mae']
+            metrics=['mae', psnr, ssim]
         )
         
         print(f"✅ Model built with {self.model.count_params():,} parameters")
@@ -414,11 +428,14 @@ class UnderwaterTrainer:
         )
         
         print("\n📈 Evaluation Results:")
-        metric_names = ['loss', 'mae']
+        if hasattr(self.model, 'metrics_names'):
+            metric_names = self.model.metrics_names
+        else:
+            metric_names = ['loss', 'mae', 'psnr', 'ssim']
+            
         if not isinstance(results, list):
             results = [results]
-        for i, val in enumerate(results):
-            name = metric_names[i] if i < len(metric_names) else f'metric_{i}'
+        for name, val in zip(metric_names, results):
             print(f"   {name}: {val:.4f}")
         
         return results

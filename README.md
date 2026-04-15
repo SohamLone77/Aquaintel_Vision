@@ -24,10 +24,17 @@ Experimental scripts:
 
 ## Current Status
 
-- Step 1 completed: centralized runtime config via `config.yaml`.
-- Step 2 completed: dataset validation enforced before training starts.
-- Step 3 completed: deterministic dataset download and extract script.
-- Environment milestone completed: Python 3.11 venv with dependencies installed.
+- ✅ Step 1: Centralized runtime config via `config.yaml`.
+- ✅ Step 2: Dataset validation enforced before training starts.
+- ✅ Step 3: Deterministic dataset download and extract script.
+- ✅ Step 4: Model run registry with metadata (`results/model_registry.json`).
+- ✅ Environment: Python 3.11 venv (`.venv311`) with all dependencies.
+- ✅ Baseline training: `unet_20260403_0811` (50 epochs, SSIM+MSE combined loss).
+- ✅ Loss A/B: `ssim_weight=0.5` confirmed as best — kept as default.
+- ✅ LR A/B: `learning_rate=1e-4` confirmed as best — kept as default.
+- ✅ Batch A/B: `batch_size=8` confirmed as best — kept as default.
+- ✅ Augmentation A/B: `profile=light` confirmed as winner — locked in `config.yaml`.
+- 🔜 **Next axis: `img_size=256`** — uncomment `# img_size: 256` in `config.yaml` to run.
 
 Progress tracker: see `IMPLEMENTATION_TODO.md`.
 

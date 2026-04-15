@@ -12,7 +12,7 @@ class ConfigError(Exception):
 
 
 _REQUIRED_SCHEMA = {
-    "data": {"path", "img_size", "validation_split"},
+    "data": {"path", "img_size", "validation_split", "seed", "deterministic_mode"},
     "training": {
         "batch_size",
         "epochs",
@@ -87,6 +87,8 @@ def _flatten_config(config):
         "data_path": os.environ.get("DATA_PATH", data_cfg["path"]),
         "img_size": data_cfg["img_size"],
         "validation_split": data_cfg["validation_split"],
+        "seed": int(data_cfg.get("seed", 42)),
+        "deterministic_mode": bool(data_cfg.get("deterministic_mode", False)),
         "batch_size": train_cfg["batch_size"],
         "epochs": train_cfg["epochs"],
         "learning_rate": train_cfg["learning_rate"],

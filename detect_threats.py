@@ -52,29 +52,37 @@ class UnderwaterThreatDetector:
         self,
         enhancement_model_path: str | None = None,
         yolo_model_path: str = "runs/train/underwater_threat_detector/weights/best.pt",
-        confidence_threshold: float = 0.5,
+        confidence_threshold: float = 0.3,
         enhance_size: int = 0,
+        use_enhancement: bool = False,
     ):
         print("=" * 60)
         print("UNDERWATER THREAT DETECTION SYSTEM")
         print("=" * 60)
 
-        resolved = resolve_enhancement_model(enhancement_model_path)
-        print(f"Loading enhancement model: {resolved}")
-        self.enhancement_model = tf.keras.models.load_model(resolved, compile=False)
+        self.use_enhancement = bool(use_enhancement)
+        self.enhancement_model = None
+        self.enhance_size = 0
 
-        inferred_size = 128
-        try:
-            shape = self.enhancement_model.input_shape
-            if isinstance(shape, list) and shape:
-                shape = shape[0]
-            if len(shape) >= 3 and shape[1] is not None:
-                inferred_size = int(shape[1])
-        except Exception:
-            pass
+        if self.use_enhancement:
+            resolved = resolve_enhancement_model(enhancement_model_path)
+            print(f"Loading enhancement model: {resolved}")
+            self.enhancement_model = tf.keras.models.load_model(resolved, compile=False)
 
-        self.enhance_size = int(enhance_size) if int(enhance_size) > 0 else inferred_size
-        print(f"Enhancement input size: {self.enhance_size}")
+            inferred_size = 128
+            try:
+                shape = self.enhancement_model.input_shape
+                if isinstance(shape, list) and shape:
+                    shape = shape[0]
+                if len(shape) >= 3 and shape[1] is not None:
+                    inferred_size = int(shape[1])
+            except Exception:
+                pass
+
+            self.enhance_size = int(enhance_size) if int(enhance_size) > 0 else inferred_size
+            print(f"Enhancement input size: {self.enhance_size}")
+        else:
+            print("Enhancement stage: disabled (running YOLO on raw frames)")
 
         resolved_yolo = resolve_yolo_model(yolo_model_path)
         if resolved_yolo == "yolov8n.pt":
@@ -112,9 +120,12 @@ class UnderwaterThreatDetector:
         return pred
 
     def detect_threats(self, image_bgr: np.ndarray, return_visualization: bool = True):
-        enhanced_rgb = self.enhance_image(image_bgr)
+        if self.use_enhancement:
+            processed_rgb = self.enhance_image(image_bgr)
+        else:
+            processed_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
-        results = self.detector(enhanced_rgb, conf=self.confidence_threshold, verbose=False)
+        results = self.detector(processed_rgb, conf=self.confidence_threshold, verbose=False)
 
         detections = []
         for box in results[0].boxes:
@@ -134,7 +145,7 @@ class UnderwaterThreatDetector:
                 }
             )
 
-        annotated = self.draw_detections(enhanced_rgb, detections) if return_visualization else None
+        annotated = self.draw_detections(processed_rgb, detections) if return_visualization else None
         return detections, annotated
 
     def draw_detections(self, image_rgb: np.ndarray, detections: list[dict]) -> np.ndarray:
@@ -287,8 +298,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", required=True, choices=["image", "video", "webcam"], help="Execution mode")
     parser.add_argument("--input", type=str, help="Input file path (image/video)")
     parser.add_argument("--output", type=str, help="Output path")
-    parser.add_argument("--conf", type=float, default=0.5, help="Confidence threshold")
+    parser.add_argument("--conf", type=float, default=0.3, help="Confidence threshold")
     parser.add_argument("--enhance-model", type=str, default=None, help="Enhancement model path")
+    enhance_group = parser.add_mutually_exclusive_group()
+    enhance_group.add_argument("--enhance", dest="use_enhancement", action="store_true", help="Enable enhancement stage before YOLO")
+    enhance_group.add_argument("--no-enhance", dest="use_enhancement", action="store_false", help="Disable enhancement stage and run YOLO on raw frames")
+    parser.set_defaults(use_enhancement=False)
     parser.add_argument("--yolo-model", type=str, default="runs/train/underwater_threat_detector/weights/best.pt", help="YOLO model path")
     parser.add_argument("--enhance-size", type=int, default=0, help="Enhancement model input size (0=auto)")
     parser.add_argument("--camera", type=int, default=0, help="Camera id for webcam mode")
@@ -303,6 +318,7 @@ def main() -> None:
         yolo_model_path=args.yolo_model,
         confidence_threshold=args.conf,
         enhance_size=args.enhance_size,
+        use_enhancement=args.use_enhancement,
     )
 
     if args.mode == "image":

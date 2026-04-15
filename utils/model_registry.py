@@ -2,7 +2,9 @@
 
 import json
 import os
+import tempfile
 from datetime import datetime
+from pathlib import Path
 
 
 class ModelRegistry:
@@ -34,6 +36,21 @@ class ModelRegistry:
         self._save()
 
     def _save(self):
-        os.makedirs(os.path.dirname(self.registry_path), exist_ok=True)
-        with open(self.registry_path, "w", encoding="utf-8") as file_obj:
-            json.dump(self.records, file_obj, indent=2)
+        out_path = Path(self.registry_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        # Write to a sibling temp file first, then atomically rename so a
+        # mid-write crash cannot leave a partially-written (corrupted) registry.
+        try:
+            fd, tmp_name = tempfile.mkstemp(
+                dir=out_path.parent, prefix=".registry_tmp_", suffix=".json"
+            )
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self.records, f, indent=2)
+            Path(tmp_name).replace(out_path)
+        except Exception:
+            # Clean up orphaned temp file on failure.
+            try:
+                Path(tmp_name).unlink(missing_ok=True)
+            except Exception:
+                pass
+            raise

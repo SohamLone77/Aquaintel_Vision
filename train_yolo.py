@@ -20,6 +20,29 @@ except Exception:
     ExperimentTracker = None
 
 
+YOLO11_ALIAS = {
+    "11n": "yolo11n.pt",
+    "11s": "yolo11s.pt",
+    "11m": "yolo11m.pt",
+    "11l": "yolo11l.pt",
+    "11x": "yolo11x.pt",
+    "yolo11n": "yolo11n.pt",
+    "yolo11s": "yolo11s.pt",
+    "yolo11m": "yolo11m.pt",
+    "yolo11l": "yolo11l.pt",
+    "yolo11x": "yolo11x.pt",
+}
+
+
+def normalize_model_name(model_name: str) -> str:
+    key = model_name.strip().lower()
+    if key in YOLO11_ALIAS:
+        return YOLO11_ALIAS[key]
+    if key.startswith("yolo11") and not key.endswith(".pt"):
+        return f"{key}.pt"
+    return model_name
+
+
 def detect_placeholder_labels(dataset_yaml: Path) -> tuple[bool, dict]:
     """Detect synthetic placeholder labels (single class + near-identical bbox geometry)."""
     with dataset_yaml.open("r", encoding="utf-8") as f:
@@ -134,6 +157,8 @@ class UnderwaterYOLOTrainer:
     def train(self, epochs: int = 100, imgsz: int = 640, batch: int = 16, patience: int = 20):
         model = YOLO(self.model_name)
 
+        auto_augment = "randaugment"
+
         args = {
             "data": str(self.dataset_yaml),
             "epochs": int(epochs),
@@ -156,8 +181,24 @@ class UnderwaterYOLOTrainer:
             "momentum": 0.937,
             "weight_decay": 0.0005,
             "warmup_epochs": 3,
+            "warmup_momentum": 0.8,
             "plots": True,
+            "hsv_h": 0.015,
+            "hsv_s": 0.7,
+            "hsv_v": 0.4,
+            "degrees": 0.0,
+            "translate": 0.1,
+            "scale": 0.5,
+            "shear": 0.0,
+            "perspective": 0.0,
+            "flipud": 0.0,
+            "fliplr": 0.5,
+            "mosaic": 1.0,
+            "mixup": 0.0,
+            "copy_paste": 0.0,
         }
+        if auto_augment:
+            args["auto_augment"] = auto_augment
 
         print("Starting YOLO training...")
         results = model.train(**args)
@@ -314,7 +355,7 @@ def main() -> None:
     args = build_parser().parse_args()
     trainer = UnderwaterYOLOTrainer(
         dataset_yaml=args.data,
-        model_name=args.model,
+        model_name=normalize_model_name(args.model),
         run_name=args.run_name,
         project_dir=args.project,
         allow_placeholder_labels=args.allow_placeholder_labels,
