@@ -38,6 +38,17 @@ results/training_plots/
 results/sharp_outputs/
 results/comparison_*.png
 quick_test_result.png
+annotation_progress.json
+annotation_quality_check_*.png
+annotation_batches/
+experiments/
+underwater_dataset_augmented/
+underwater_dataset_finetune/
+results/analysis/
+results/metrics/
+results/*_summary.txt
+results/detection_report.json
+results/model_registry.json
 
 # YOLO/Detection generated artifacts
 runs/
@@ -46,5 +57,6 @@ results/detections/
 results/yolo_training/
 results/processed_videos/
 yolov8n.pt
+/yolo*.pt
 test_underwater_video.mp4
 test_enhanced.mp4

@@ -1,18 +1,43 @@
-# Ignore local environment files and logs
+# ── Python runtime artifacts ──────────────────────────────────────────────────
 .venv*/
 .env
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Ignore model checkpoints, downloaded datasets, and experiment tracking
-data/
+# ── ML model checkpoints & weights (large binaries, not needed at runtime) ────
+# These must be volume-mounted or fetched from a model registry at deploy time.
+*.pt
+*.onnx
 models/
+
+# ── Training data & outputs ───────────────────────────────────────────────────
+data/
 runs/
 results/
 logs/
-.pytest_cache/
+experiments/
+training/
+underwater_dataset*/
+annotation_batches/
 
-# Artifact tracking and ide folders
+# ── Large binary annotation previews & media ──────────────────────────────────
+annotation_quality_check_*.png
+quick_test_result.png
+*.mp4
+
+# ── Jupyter notebooks ─────────────────────────────────────────────────────────
+notebooks/
+*.ipynb
+
+# ── Annotation helper files (not needed in container) ────────────────────────
+annotation_priority_*.txt
+annotation_checklist.md
+annotation_progress.json
+
+# ── IDE / tooling ──────────────────────────────────────────────────────────────
 .gemini/
 .vscode/
 .idea/
+.pytest_cache/

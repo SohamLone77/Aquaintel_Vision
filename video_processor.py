@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import argparse
 import glob
+import logging
 import os
 import queue
 import threading
 import time
+import urllib.parse
 from pathlib import Path
 from typing import List, Optional
 
@@ -16,6 +18,8 @@ import cv2
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_MODEL_GLOB = [
@@ -29,17 +33,17 @@ def configure_gpu(use_gpu: bool) -> None:
     """Configure TensorFlow runtime for GPU or CPU."""
     if not use_gpu:
         tf.config.set_visible_devices([], "GPU")
-        print("[INFO] GPU disabled. Using CPU.")
+        logger.info("GPU disabled. Using CPU.")
         return
 
     gpus = tf.config.list_physical_devices("GPU")
     if not gpus:
-        print("[WARN] No GPU detected. Using CPU.")
+        logger.warning("No GPU detected. Using CPU.")
         return
 
     for gpu in gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
-    print(f"[INFO] GPU acceleration enabled ({len(gpus)} GPU(s)).")
+    logger.info("GPU acceleration enabled (%d GPU(s)).", len(gpus))
 
 
 def _safe_load_model_path_from_registry(registry_path: Path) -> Optional[str]:
@@ -95,21 +99,21 @@ class RealTimeVideoEnhancer:
     """Real-time enhancer for webcam, files, and RTSP streams."""
 
     def __init__(self, model_path: Optional[str] = None, target_size: int = 256, use_gpu: bool = True):
-        print("=" * 60)
-        print("REAL-TIME VIDEO ENHANCER")
-        print("=" * 60)
+        logger.info("=" * 60)
+        logger.info("REAL-TIME VIDEO ENHANCER")
+        logger.info("=" * 60)
 
         configure_gpu(use_gpu)
 
         resolved_model_path = resolve_model_path(model_path)
-        print(f"[INFO] Loading model: {resolved_model_path}")
+        logger.info("Loading model: %s", resolved_model_path)
 
         # compile=False avoids requiring custom loss/metric symbols at inference time.
         self.model = tf.keras.models.load_model(resolved_model_path, compile=False)
         self.target_size = int(target_size)
         self.frame_count = 0
 
-        print("[INFO] Model loaded successfully.")
+        logger.info("Model loaded successfully.")
 
     def enhance_frame(self, frame: np.ndarray) -> np.ndarray:
         """Enhance one frame in BGR format."""
@@ -128,17 +132,17 @@ class RealTimeVideoEnhancer:
 
     def process_webcam(self, camera_id: int = 0, window_name: str = "Underwater Enhancement") -> None:
         """Run webcam enhancement loop."""
-        print("[INFO] Webcam mode started. Keys: q=quit, s=save, r=reset FPS")
+        logger.info("Webcam mode started. Keys: q=quit, s=save, r=reset FPS")
 
         cap = cv2.VideoCapture(camera_id)
         if not cap.isOpened():
-            print("[ERROR] Could not open webcam.")
+            logger.error("Could not open webcam.")
             return
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         src_fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
-        print(f"[INFO] Webcam: {width}x{height} @ {src_fps:.1f} FPS")
+        logger.info("Webcam: %dx%d @ %.1f FPS", width, height, src_fps)
 
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         frame_times_ms: List[float] = []
@@ -147,7 +151,7 @@ class RealTimeVideoEnhancer:
         while True:
             ok, frame = cap.read()
             if not ok:
-                print("[ERROR] Failed to read webcam frame.")
+                logger.error("Failed to read webcam frame.")
                 break
 
             start = time.time()
@@ -193,10 +197,10 @@ class RealTimeVideoEnhancer:
                 save_path = save_dir / f"frame_{timestamp}.jpg"
                 cv2.imwrite(str(save_path), overlay)
                 saved_frames += 1
-                print(f"[INFO] Saved frame: {save_path}")
+                logger.info("Saved frame: %s", save_path)
             if key == ord("r"):
                 frame_times_ms.clear()
-                print("[INFO] FPS history reset.")
+                logger.info("FPS history reset.")
 
         cap.release()
         cv2.destroyAllWindows()
@@ -204,21 +208,21 @@ class RealTimeVideoEnhancer:
         final_avg_ms = float(np.mean(frame_times_ms)) if frame_times_ms else 0.0
         final_avg_fps = (1000.0 / final_avg_ms) if final_avg_ms > 0.0 else 0.0
 
-        print("[INFO] Webcam session ended.")
-        print(f"[INFO] Total frames: {self.frame_count}")
-        print(f"[INFO] Saved frames: {saved_frames}")
-        print(f"[INFO] Average enhanced FPS: {final_avg_fps:.1f}")
+        logger.info("Webcam session ended.")
+        logger.info("Total frames: %d", self.frame_count)
+        logger.info("Saved frames: %d", saved_frames)
+        logger.info("Average enhanced FPS: %.1f", final_avg_fps)
 
     def process_video_file(self, input_path: str, output_path: Optional[str] = None, show_preview: bool = True) -> Optional[str]:
         """Enhance a video file and write output video."""
         input_file = Path(input_path)
         if not input_file.exists():
-            print(f"[ERROR] Input video not found: {input_path}")
+            logger.error("Input video not found: %s", input_path)
             return None
 
         cap = cv2.VideoCapture(str(input_file))
         if not cap.isOpened():
-            print(f"[ERROR] Could not open input video: {input_path}")
+            logger.error("Could not open input video: %s", input_path)
             return None
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -238,9 +242,9 @@ class RealTimeVideoEnhancer:
         writer = cv2.VideoWriter(str(output_file), fourcc, fps, (width, height))
 
         frame_times_ms: List[float] = []
-        print(f"[INFO] Processing video: {input_path}")
-        print(f"[INFO] Output path: {output_file}")
-        print(f"[INFO] Resolution: {width}x{height}, FPS: {fps:.1f}, Frames: {total_frames}")
+        logger.info("Processing video: %s", input_path)
+        logger.info("Output path: %s", output_file)
+        logger.info("Resolution: %dx%d, FPS: %.1f, Frames: %d", width, height, fps, total_frames)
 
         for i in tqdm(range(total_frames if total_frames > 0 else 10**9), desc="Processing", unit="frame"):
             ok, frame = cap.read()
@@ -257,7 +261,7 @@ class RealTimeVideoEnhancer:
                 preview = cv2.resize(enhanced, (max(320, width // 2), max(240, height // 2)))
                 cv2.imshow("Video Processing Preview", preview)
                 if cv2.waitKey(1) & 0xFF == ord("q"):
-                    print("[INFO] Preview stop requested. Ending early.")
+                    logger.info("Preview stop requested. Ending early.")
                     break
 
         cap.release()
@@ -265,24 +269,33 @@ class RealTimeVideoEnhancer:
         cv2.destroyAllWindows()
 
         if not frame_times_ms:
-            print("[WARN] No frames were processed.")
+            logger.warning("No frames were processed.")
             return None
 
         avg_ms = float(np.mean(frame_times_ms))
         avg_fps = 1000.0 / avg_ms
-        print(f"[INFO] Saved enhanced video: {output_file}")
-        print(f"[INFO] Avg inference: {avg_ms:.1f} ms/frame")
-        print(f"[INFO] Avg enhanced FPS: {avg_fps:.1f}")
-        print(f"[INFO] Frames processed: {len(frame_times_ms)}")
+        logger.info("Saved enhanced video: %s", output_file)
+        logger.info("Avg inference: %.1f ms/frame", avg_ms)
+        logger.info("Avg enhanced FPS: %.1f", avg_fps)
+        logger.info("Frames processed: %d", len(frame_times_ms))
 
         return str(output_file)
 
     def process_rtsp_stream(self, rtsp_url: str, output_path: Optional[str] = None) -> None:
         """Enhance and display RTSP stream."""
-        print(f"[INFO] Connecting to RTSP stream: {rtsp_url}")
+        # Fix N5: validate URL scheme to prevent SSRF via embedded credentials
+        # or connections to non-RTSP internal services.
+        parsed = urllib.parse.urlparse(rtsp_url)
+        if parsed.scheme not in {"rtsp", "rtsps"}:
+            raise ValueError(
+                f"Invalid stream URL scheme '{parsed.scheme}'. "
+                "Only rtsp:// and rtsps:// are supported."
+            )
+
+        logger.info("Connecting to RTSP stream: %s", rtsp_url)
         cap = cv2.VideoCapture(rtsp_url)
         if not cap.isOpened():
-            print("[ERROR] Could not open RTSP stream.")
+            logger.error("Could not open RTSP stream.")
             return
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -297,15 +310,15 @@ class RealTimeVideoEnhancer:
             out_file.parent.mkdir(parents=True, exist_ok=True)
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             writer = cv2.VideoWriter(str(out_file), fourcc, fps, (width, height))
-            print(f"[INFO] Recording stream to: {out_file}")
+            logger.info("Recording stream to: %s", out_file)
 
         frame_times_ms: List[float] = []
-        print("[INFO] RTSP mode started. Press q to quit.")
+        logger.info("RTSP mode started. Press q to quit.")
 
         while True:
             ok, frame = cap.read()
             if not ok:
-                print("[WARN] Stream disconnected or frame read failed.")
+                logger.warning("Stream disconnected or frame read failed.")
                 break
 
             start = time.time()
@@ -336,7 +349,7 @@ class RealTimeVideoEnhancer:
         if writer is not None:
             writer.release()
         cv2.destroyAllWindows()
-        print(f"[INFO] RTSP session ended. Processed {len(frame_times_ms)} frames.")
+        logger.info("RTSP session ended. Processed %d frames.", len(frame_times_ms))
 
     def batch_process_folder(
         self,
@@ -353,7 +366,7 @@ class RealTimeVideoEnhancer:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         if not in_dir.exists():
-            print(f"[ERROR] Input folder not found: {input_folder}")
+            logger.error("Input folder not found: %s", input_folder)
             return []
 
         video_files: List[Path] = []
@@ -363,10 +376,10 @@ class RealTimeVideoEnhancer:
 
         video_files = sorted(set(video_files))
         if not video_files:
-            print("[WARN] No video files found in folder.")
+            logger.warning("No video files found in folder.")
             return []
 
-        print(f"[INFO] Found {len(video_files)} videos in {input_folder}")
+        logger.info("Found %d videos in %s", len(video_files), input_folder)
         outputs: List[str] = []
 
         for file_path in video_files:
@@ -375,7 +388,7 @@ class RealTimeVideoEnhancer:
             if result:
                 outputs.append(result)
 
-        print(f"[INFO] Batch complete. Processed {len(outputs)} videos.")
+        logger.info("Batch complete. Processed %d videos.", len(outputs))
         return outputs
 
 
@@ -408,13 +421,13 @@ class ThreadedVideoEnhancer(RealTimeVideoEnhancer):
 
         cap = cv2.VideoCapture(camera_id)
         if not cap.isOpened():
-            print("[ERROR] Could not open webcam.")
+            logger.error("Could not open webcam.")
             self.is_running = False
             self.processing_thread.join(timeout=1.0)
             return
 
         frame_id = 0
-        print("[INFO] Threaded webcam mode started. Press q to quit.")
+        logger.info("Threaded webcam mode started. Press q to quit.")
 
         while True:
             ok, frame = cap.read()

@@ -46,7 +46,10 @@ matplotlib.use('Agg')  # non-interactive backend for headless environments
 import matplotlib.pyplot as plt                                          # noqa: E402
 from datetime import datetime                                            # noqa: E402
 
-print("✅ All modules imported successfully")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+logger.info("✅ All modules imported successfully")
 
 
 class UnderwaterTrainer:
@@ -61,9 +64,9 @@ class UnderwaterTrainer:
         Args:
             config: Dictionary with training parameters
         """
-        print("=" * 60)
-        print("UNDERWATER IMAGE ENHANCEMENT - TRAINING")
-        print("=" * 60)
+        logger.info("=" * 60)
+        logger.info("UNDERWATER IMAGE ENHANCEMENT - TRAINING")
+        logger.info("=" * 60)
 
         # Ensure required directories exist
         for dir_name in ['models/checkpoints', 'losses', 'training',
@@ -79,9 +82,9 @@ class UnderwaterTrainer:
         os.makedirs(self.config['results_dir'], exist_ok=True)
         os.makedirs(os.path.join(self.config['results_dir'], 'training_plots'), exist_ok=True)
         
-        print("\n📋 Configuration:")
+        logger.info("\n📋 Configuration:")
         for key, value in self.config.items():
-            print(f"   {key}: {value}")
+            logger.info(f"   {key}: {value}")
 
         device_info = configure_tensorflow_device(self.config)
         print(
@@ -100,7 +103,7 @@ class UnderwaterTrainer:
     
     def setup_data(self):
         """Initialize data loader and datasets"""
-        print("\n📂 Loading data...")
+        logger.info("\n📂 Loading data...")
 
         is_valid, details = validate_dataset(data_path=self.config['data_path'])
         if not is_valid:
@@ -120,7 +123,7 @@ class UnderwaterTrainer:
                 seed=int(self.config.get('seed', 42)),
                 preserve_aspect_ratio=bool(self.config.get('preserve_aspect_ratio', False)),
             )
-            print("✅ Using DeterministicDataLoader")
+            logger.info("✅ Using DeterministicDataLoader")
         else:
             self.loader = UnderwaterDataLoader(
                 data_path=self.config['data_path'],
@@ -142,13 +145,13 @@ class UnderwaterTrainer:
         
         # Print dataset info
         if hasattr(self.loader, 'train_indices'):
-            print(f"✅ Training samples: {len(self.loader.train_indices)}")
+            logger.info(f"✅ Training samples: {len(self.loader.train_indices)}")
         if hasattr(self.loader, 'val_indices') and self.val_dataset is not None:
-            print(f"✅ Validation samples: {len(self.loader.val_indices)}")
+            logger.info(f"✅ Validation samples: {len(self.loader.val_indices)}")
     
     def _create_dummy_data(self):
         """Create dummy data for testing"""
-        print("Creating dummy dataset for testing...")
+        logger.info("Creating dummy dataset for testing...")
         
         # Create dummy numpy data
         x_dummy = np.random.rand(10, self.config['img_size'], self.config['img_size'], 3).astype(np.float32)
@@ -158,11 +161,11 @@ class UnderwaterTrainer:
         self.train_dataset = self.train_dataset.batch(self.config['batch_size'])
         self.val_dataset = self.train_dataset.take(1)
         
-        print("✅ Created dummy dataset")
+        logger.info("✅ Created dummy dataset")
     
     def setup_model(self):
         """Build and compile model"""
-        print("\n🏗️ Building model...")
+        logger.info("\n🏗️ Building model...")
         
         # Build model
         self.model = build_basic_unet(
@@ -182,16 +185,16 @@ class UnderwaterTrainer:
                 mse = tf.reduce_mean(tf.square(y_true - y_pred))
                 return _w * ssim + (1.0 - _w) * mse
             selected_loss = _combined_loss
-            print(f"🔧 Loss: combined (ssim_weight={ssim_weight})")
+            logger.info(f"🔧 Loss: combined (ssim_weight={ssim_weight})")
         elif loss_type == 'mse':
             selected_loss = SimpleLosses.mse_loss
-            print("🔧 Loss: mse")
+            logger.info("🔧 Loss: mse")
         elif loss_type == 'mae':
             selected_loss = SimpleLosses.mae_loss
-            print("🔧 Loss: mae")
+            logger.info("🔧 Loss: mae")
         elif loss_type == 'ssim':
             selected_loss = SimpleLosses.ssim_loss
-            print("🔧 Loss: ssim")
+            logger.info("🔧 Loss: ssim")
         else:
             raise ValueError(f"Unsupported loss_type: {loss_type}")
 
@@ -208,7 +211,7 @@ class UnderwaterTrainer:
             metrics=['mae', psnr, ssim]
         )
         
-        print(f"✅ Model built with {self.model.count_params():,} parameters")
+        logger.info(f"✅ Model built with {self.model.count_params():,} parameters")
         
         # Save model summary
         summary_path = os.path.join(
@@ -220,7 +223,7 @@ class UnderwaterTrainer:
     
     def setup_callbacks(self):
         """Setup training callbacks"""
-        print("\n📞 Setting up callbacks...")
+        logger.info("\n📞 Setting up callbacks...")
         
         self.callbacks = [
             tf.keras.callbacks.ModelCheckpoint(
@@ -252,7 +255,7 @@ class UnderwaterTrainer:
                     tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
                 )
             except Exception:
-                print("⚠️ TensorBoard unavailable; continuing without TensorBoard callback.")
+                logger.warning("⚠️ TensorBoard unavailable; continuing without TensorBoard callback.")
         
         # CSV logger for easy progress monitoring
         if self.config['use_csv_logger']:
@@ -260,19 +263,19 @@ class UnderwaterTrainer:
             os.makedirs("logs/csv", exist_ok=True)
             self.callbacks.append(tf.keras.callbacks.CSVLogger(csv_log_path))
         
-        print(f"✅ Created {len(self.callbacks)} callbacks")
+        logger.info(f"✅ Created {len(self.callbacks)} callbacks")
     
     def train(self):
         """Run training"""
-        print("\n🚀 Starting training...")
+        logger.info("\n🚀 Starting training...")
         
         # Compute steps per epoch
         steps_per_epoch = self.loader.train_steps
         validation_steps = self.loader.val_steps if self.val_dataset else None
         
-        print(f"   Steps per epoch: {steps_per_epoch}")
+        logger.info(f"   Steps per epoch: {steps_per_epoch}")
         if validation_steps:
-            print(f"   Validation steps: {validation_steps}")
+            logger.info(f"   Validation steps: {validation_steps}")
         
         # Train model
         try:
@@ -287,7 +290,7 @@ class UnderwaterTrainer:
             )
         except Exception as exc:
             if "TensorBoard is not installed" in str(exc) or "TBNotInstalledError" in type(exc).__name__:
-                print("⚠️ TensorBoard runtime unavailable; retrying training without TensorBoard callback.")
+                logger.warning("⚠️ TensorBoard runtime unavailable; retrying training without TensorBoard callback.")
                 self.callbacks = [
                     callback for callback in self.callbacks
                     if not isinstance(callback, tf.keras.callbacks.TensorBoard)
@@ -304,7 +307,7 @@ class UnderwaterTrainer:
             else:
                 raise
         
-        print("\n✅ Training complete!")
+        logger.info("\n✅ Training complete!")
         
         # Plot training history
         self.plot_history()
@@ -314,8 +317,8 @@ class UnderwaterTrainer:
         final_keras = os.path.join(self.config['checkpoint_dir'], f"{self.config['model_name']}_final.keras")
         self.model.save(final_h5)
         self.model.save(final_keras)
-        print(f"💾 Final model saved to: {final_h5}")
-        print(f"💾 Final model saved to: {final_keras}")
+        logger.info(f"💾 Final model saved to: {final_h5}")
+        logger.info(f"💾 Final model saved to: {final_keras}")
 
         self._record_training_metadata(final_h5, final_keras)
         
@@ -371,9 +374,9 @@ class UnderwaterTrainer:
                     model_path=final_keras,
                     is_promoted=False,
                 )
-                print("🧪 Experiment tracker updated for U-Net run")
+                logger.info("🧪 Experiment tracker updated for U-Net run")
             except Exception as exc:
-                print(f"⚠️ Experiment tracker update failed: {exc}")
+                logger.warning(f"⚠️ Experiment tracker update failed: {exc}")
     
     def plot_history(self):
         """Plot training history"""
@@ -412,22 +415,22 @@ class UnderwaterTrainer:
         plt.savefig(history_plot_path, dpi=150)
         plt.close(fig)
         
-        print(f"📊 Training history saved to {history_plot_path}")
+        logger.info(f"📊 Training history saved to {history_plot_path}")
     
     def evaluate(self):
         """Evaluate model on validation data"""
         if self.val_dataset is None:
-            print("No validation data available")
+            logger.info("No validation data available")
             return
         
-        print("\n📊 Evaluating model...")
+        logger.info("\n📊 Evaluating model...")
         results = self.model.evaluate(
             self.val_dataset,
             steps=self.loader.val_steps,
             verbose=1
         )
         
-        print("\n📈 Evaluation Results:")
+        logger.info("\n📈 Evaluation Results:")
         if hasattr(self.model, 'metrics_names'):
             metric_names = self.model.metrics_names
         else:
@@ -436,17 +439,17 @@ class UnderwaterTrainer:
         if not isinstance(results, list):
             results = [results]
         for name, val in zip(metric_names, results):
-            print(f"   {name}: {val:.4f}")
+            logger.info(f"   {name}: {val:.4f}")
         
         return results
     
     def predict_sample(self, n_samples=4):
         """Predict on sample images"""
         if self.val_dataset is None:
-            print("No validation data for predictions")
+            logger.info("No validation data for predictions")
             return
         
-        print("\n🖼️ Generating sample predictions...")
+        logger.info("\n🖼️ Generating sample predictions...")
         
         # Get a batch
         for batch_x, batch_y in self.val_dataset.take(1):
@@ -481,7 +484,7 @@ class UnderwaterTrainer:
             plt.savefig(sample_plot_path, dpi=150)
             plt.close(fig)
             
-            print(f"✅ Sample predictions saved")
+            logger.info(f"✅ Sample predictions saved")
 
 def main():
     """Main training function"""
@@ -503,9 +506,9 @@ def main():
     # Generate predictions
     trainer.predict_sample()
     
-    print("\n" + "="*60)
-    print("TRAINING PIPELINE COMPLETE!")
-    print("="*60)
+    logger.info("\n" + "="*60)
+    logger.info("TRAINING PIPELINE COMPLETE!")
+    logger.info("="*60)
 
 if __name__ == "__main__":
     main()

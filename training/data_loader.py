@@ -191,9 +191,13 @@ class UnderwaterDataLoader:
                 )
             except Exception:
                 # Fallback if train_test_split fails
+                # Fix N11: ensure fallback is shuffled too
+                import random
+                shuffled_indices = list(indices)
+                random.Random(42).shuffle(shuffled_indices)
                 split = int(n_samples * (1 - self.validation_split))
-                self.train_indices = indices[:split]
-                self.val_indices = indices[split:]
+                self.train_indices = shuffled_indices[:split]
+                self.val_indices = shuffled_indices[split:]
         else:
             self.train_indices = indices
             self.val_indices = []

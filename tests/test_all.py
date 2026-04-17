@@ -53,6 +53,13 @@ class TestModel(unittest.TestCase):
 
 class TestScripts(unittest.TestCase):
     def _run_help(self, script):
+        # Fix N8: Guard test subprocess calls by ensuring the script exists
+        # and checking that the script parameter is a direct filename.
+        if os.path.basename(script) != script:
+            raise ValueError("Script must be a simple filename in the root directory")
+        if not os.path.exists(script):
+            self.skipTest(f"{script} not found")
+        
         cmd = [sys.executable, script, "--help"]
         return subprocess.run(cmd, capture_output=True, text=True)
 

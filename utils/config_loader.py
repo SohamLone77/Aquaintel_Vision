@@ -73,8 +73,19 @@ def _read_yaml(config_path):
     return data
 
 
-def _flatten_config(config):
-    """Convert nested config schema into trainer-compatible flat keys."""
+def _flatten_config(config, timestamp: str | None = None):
+    """Convert nested config schema into trainer-compatible flat keys.
+
+    Parameters
+    ----------
+    config:
+        Raw parsed YAML dict.
+    timestamp:
+        Pre-generated timestamp string (``YYYYmmdd_HHMM``) used to build
+        ``model_name``.  Callers should generate this *once* per run and
+        pass it in so that repeated config loads within the same process
+        produce an identical, stable model name.
+    """
     data_cfg = config["data"]
     train_cfg = config["training"]
     loss_cfg = config["loss"]
@@ -82,7 +93,8 @@ def _flatten_config(config):
     model_cfg = config["model"]
     logging_cfg = config["logging"]
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     return {
         "data_path": os.environ.get("DATA_PATH", data_cfg["path"]),
         "img_size": data_cfg["img_size"],
@@ -118,11 +130,18 @@ def _flatten_config(config):
 
 
 def load_runtime_config(config_path="config.yaml", overrides=None):
-    """Load config from yaml, validate it, and return trainer-ready settings."""
+    """Load config from yaml, validate it, and return trainer-ready settings.
+
+    The ``model_name`` field uses a single timestamp captured here so that
+    repeated calls within the same Python process always resolve to the same
+    run name.  Pass ``overrides={"model_name": ...}`` to override explicitly.
+    """
     raw_config = _read_yaml(config_path)
     _validate_schema(raw_config)
 
-    runtime_config = _flatten_config(raw_config)
+    # Generate the timestamp once here so _flatten_config is pure.
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    runtime_config = _flatten_config(raw_config, timestamp=timestamp)
     if overrides:
         runtime_config.update(overrides)
 

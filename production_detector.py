@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import time
 from collections import defaultdict, deque
@@ -22,6 +23,8 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 from utils.config_loader import load_runtime_config
+
+logger = logging.getLogger(__name__)
 
 try:
     _cfg = load_runtime_config()
@@ -165,9 +168,9 @@ class UnderwaterThreatDetector:
         use_pretrained: bool = False,
         pretrained_threat_mapping: dict[int, dict[str, str]] | None = None,
     ) -> None:
-        print("=" * 66)
-        print("UNDERWATER THREAT DETECTION SYSTEM")
-        print("=" * 66)
+        logger.info("=" * 66)
+        logger.info("UNDERWATER THREAT DETECTION SYSTEM")
+        logger.info("=" * 66)
 
         self.use_pretrained = bool(use_pretrained or pretrained_threat_mapping)
         if pretrained_threat_mapping:
@@ -185,7 +188,7 @@ class UnderwaterThreatDetector:
             yolo_model_path or DEFAULT_YOLO_PATH,
             allow_fallback=not self.use_pretrained,
         )
-        print(f"Loading YOLO model: {resolved_yolo}")
+        logger.info("Loading YOLO model: %s", resolved_yolo)
         self.detector = YOLO(resolved_yolo)
         self.model_path = resolved_yolo
 
@@ -196,7 +199,7 @@ class UnderwaterThreatDetector:
 
         if self.enable_enhancement:
             resolved_enh = resolve_enhancement_model(enhancement_model_path)
-            print(f"Loading enhancement model: {resolved_enh}")
+            logger.info("Loading enhancement model: %s", resolved_enh)
             try:
                 import tensorflow as tf  # type: ignore
             except ImportError as exc:
@@ -218,9 +221,9 @@ class UnderwaterThreatDetector:
                 pass
 
             self.enhance_size = inferred_size
-            print(f"Enhancement input size: {self.enhance_size}")
+            logger.info("Enhancement input size: %d", self.enhance_size)
         else:
-            print("Enhancement: OFF (recommended based on evaluation)")
+            logger.info("Enhancement: OFF (recommended based on evaluation)")
 
         self.confidence_threshold = float(confidence_threshold)
         self.stage1_confidence = float(stage1_confidence) if stage1_confidence is not None else self.confidence_threshold
@@ -246,19 +249,20 @@ class UnderwaterThreatDetector:
             "stage1_detections": 0,
             "stage2_alerts": 0,
             "class_counts": defaultdict(int),
-            "processing_times": [],
-            "alerts_triggered": [],
+            # Bounded deque prevents unbounded memory growth in long sessions
+            "processing_times": deque(maxlen=1000),
+            "alerts_triggered": deque(maxlen=500),
         }
 
         Path("results/detections").mkdir(parents=True, exist_ok=True)
         Path("logs/detection").mkdir(parents=True, exist_ok=True)
 
-        print("Configuration:")
-        print(f"  enhancement: {'ON' if self.enable_enhancement else 'OFF'}")
-        print(f"  pretrained:  {'ON' if self.pretrained_threat_mapping else 'OFF'}")
-        print(f"  stage1 conf: {self.stage1_confidence}")
-        print(f"  stage2 conf: {self.stage2_confidence}")
-        print(f"  iou:         {self.iou_threshold}")
+        logger.info("Configuration:")
+        logger.info("  enhancement: %s", 'ON' if self.enable_enhancement else 'OFF')
+        logger.info("  pretrained:  %s", 'ON' if self.pretrained_threat_mapping else 'OFF')
+        logger.info("  stage1 conf: %s", self.stage1_confidence)
+        logger.info("  stage2 conf: %s", self.stage2_confidence)
+        logger.info("  iou:         %s", self.iou_threshold)
 
     def enhance_image(self, image_bgr: np.ndarray) -> np.ndarray:
         if not self.enable_enhancement or self.enhancement_model is None:
@@ -437,15 +441,15 @@ class UnderwaterThreatDetector:
             raise FileNotFoundError(f"Could not read image: {image_path}")
 
         detections, annotated, elapsed_ms = self.detect(image, use_temporal=False)
-        print(f"Processed image in {elapsed_ms:.1f} ms | detections: {len(detections)}")
+        logger.info("Processed image in %.1f ms | detections: %d", elapsed_ms, len(detections))
         for det in detections:
-            print(f"- {det['class_name']} conf={det['confidence']:.2f} level={det['threat_level']}")
+            logger.debug("  - %s conf=%.2f level=%s", det['class_name'], det['confidence'], det['threat_level'])
 
         if output_path:
             out_path = Path(output_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(out_path), annotated)
-            print(f"Saved: {out_path}")
+            logger.info("Saved: %s", out_path)
 
         if visualize:
             cv2.imshow("Threat Detection", annotated)
@@ -501,7 +505,7 @@ class UnderwaterThreatDetector:
 
                 if processed % 50 == 0 and total_frames > 0:
                     pct = (frame_idx / total_frames) * 100.0
-                    print(f"Progress: {pct:.1f}% ({processed} frames processed)")
+                    logger.debug("Progress: %.1f%% (%d frames processed)", pct, processed)
 
             frame_idx += 1
             if max_frames is not None and frame_idx >= max_frames:
@@ -512,16 +516,16 @@ class UnderwaterThreatDetector:
             writer.release()
 
         avg_ms = float(np.mean(self.stats["processing_times"])) if self.stats["processing_times"] else 0.0
-        print("Video processing complete")
-        print(f"  frames processed: {processed}")
-        print(f"  total detections: {len(all_detections)}")
-        print(f"  avg inference:    {avg_ms:.1f} ms/frame")
+        logger.info("Video processing complete")
+        logger.info("  frames processed: %d", processed)
+        logger.info("  total detections: %d", len(all_detections))
+        logger.info("  avg inference:    %.1f ms/frame", avg_ms)
 
         return all_detections
 
     def process_webcam(self, camera_id: int = 0) -> None:
-        print("Real-time detection started")
-        print("Controls: q=quit, s=save frame, e=toggle enhancement")
+        logger.info("Real-time detection started")
+        logger.info("Controls: q=quit, s=save frame, e=toggle enhancement")
 
         cap = cv2.VideoCapture(camera_id)
         if not cap.isOpened():
@@ -555,13 +559,13 @@ class UnderwaterThreatDetector:
                 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
                 save_path = Path("results/detections") / f"threat_{ts}.jpg"
                 cv2.imwrite(str(save_path), annotated)
-                print(f"Saved frame: {save_path}")
+                logger.info("Saved frame: %s", save_path)
             if key == ord("e"):
                 if self.enhancement_model is None:
-                    print("Enhancement model not loaded; cannot enable enhancement")
+                    logger.warning("Enhancement model not loaded; cannot enable enhancement")
                 else:
                     self.enable_enhancement = not self.enable_enhancement
-                    print(f"Enhancement: {'ON' if self.enable_enhancement else 'OFF'}")
+                    logger.info("Enhancement: %s", 'ON' if self.enable_enhancement else 'OFF')
 
         cap.release()
         cv2.destroyAllWindows()
@@ -579,7 +583,7 @@ class UnderwaterThreatDetector:
         det_off, ann_off, ms_off = self.detect(image, apply_enhancement=False, use_temporal=False)
 
         if self.enhancement_model is None:
-            print("Enhancement model not loaded; compare will include OFF mode only")
+            logger.warning("Enhancement model not loaded; compare will include OFF mode only")
             summary = {
                 "off": {"count": len(det_off), "ms": ms_off, "detections": det_off},
                 "on": None,
@@ -611,7 +615,7 @@ class UnderwaterThreatDetector:
             out_path = Path(output_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(out_path), comparison)
-            print(f"Saved compare image: {out_path}")
+            logger.info("Saved compare image: %s", out_path)
 
         if visualize:
             cv2.imshow("Compare OFF (left) vs ON (right)", comparison)
@@ -681,7 +685,7 @@ class UnderwaterThreatDetector:
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        print(f"Report saved: {out_path}")
+        logger.info("Report saved: %s", out_path)
         return report
 
 

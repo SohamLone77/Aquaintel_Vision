@@ -1,4 +1,4 @@
-﻿"""Deterministic data loader with optional aspect-ratio preserving preprocessing."""
+"""Deterministic data loader with optional aspect-ratio preserving preprocessing."""
 
 from __future__ import annotations
 
@@ -53,8 +53,10 @@ class DeterministicDataLoader:
     def _split_indices(self, seed):
         n = len(self.raw_files)
         indices = np.arange(n)
-        if not self.deterministic:
-            np.random.shuffle(indices)
+        # Fix N11: always shuffle indices so train/val are uniformly distributed.
+        # Since np.random.seed was already set in init if deterministic=True,
+        # this shuffle is fully reproducible.
+        np.random.shuffle(indices)
         split = int(n * (1 - self.validation_split))
         self.train_indices = indices[:split]
         self.val_indices = indices[split:]

@@ -2,15 +2,15 @@
   "train": {
     "total_images": 622,
     "total_labels": 623,
-    "real_annotations": 74,
-    "dummy_annotations": 549,
-    "progress_percent": 11.89710610932476
+    "real_annotations": 318,
+    "dummy_annotations": 305,
+    "progress_percent": 51.12540192926045
   },
   "val": {
     "total_images": 133,
-    "total_labels": 0,
-    "real_annotations": 0,
-    "dummy_annotations": 0,
-    "progress_percent": 0.0
+    "total_labels": 133,
+    "real_annotations": 38,
+    "dummy_annotations": 95,
+    "progress_percent": 28.57142857142857
   }
 }
