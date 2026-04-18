@@ -25,13 +25,8 @@ pinned: false
 
 ---
 
-<!-- Hero image / GIF — replace with an actual screenshot or screen recording of your app -->
 > 📸 **Hero Screenshot**
-> ```
-> [Place a screenshot or animated GIF of the running app here]
-> Tip: Record with ShareX or OBS → export as GIF → commit to repo → embed below
-> ```
-> `![AquaIntel Vision in action](docs/hero.gif)`
+> ![AquaIntel Vision in action](web_interface.gif)
 
 ---
 
@@ -84,7 +79,6 @@ AquaIntel Vision is a **full-stack MLOps dashboard** for underwater computer vis
 | Platform | Link |
 |---|---|
 | **Hugging Face Spaces** | [![Open in HuggingFace](https://img.shields.io/badge/🤗%20Hugging%20Face-Spaces-yellow)](https://huggingface.co/spaces/SohamLone77/aquaintel-vision) |
-| **Streamlit Cloud** | [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/SohamLone77/Aquaintel_Vision/main/streamlit_app.py) |
 
 ---
 
