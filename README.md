@@ -25,7 +25,6 @@ pinned: false
 
 ---
 
-> 📸 **Hero Screenshot**
 > ![AquaIntel Vision in action](web_interface.gif)
 
 ---
